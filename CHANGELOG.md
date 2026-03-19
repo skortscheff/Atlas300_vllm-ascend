@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v1.7] — 2026-03-19
+
+### Added
+- **`--max-thinking-tokens 2048`** — caps DeepSeek-R1 chain-of-thought length. Prevents the model spending excessive time reasoning on simple queries (e.g. "2+2" was taking ~5 minutes). Complex questions still get up to 2048 tokens of reasoning budget.
+
+---
+
 ## [v1.6] — 2026-03-19
 
 ### Fixed

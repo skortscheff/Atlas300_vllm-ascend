@@ -117,6 +117,7 @@ Both services communicate over an internal Docker bridge network (`llmnet`). The
 | `--enforce-eager` | — | Required for Ascend compatibility |
 | `--compilation-config` | `{"mode":0}` | Disables graph compilation (Ascend; `mode` key replaces deprecated `level`) |
 | `--reasoning-parser` | `deepseek_r1` | Parses DeepSeek-R1 `<think>` blocks — clean answer in `content`, reasoning in `reasoning_content` |
+| `--max-thinking-tokens` | `2048` | Caps chain-of-thought length — prevents the model over-thinking simple questions |
 
 ## NPU Device Mapping
 
