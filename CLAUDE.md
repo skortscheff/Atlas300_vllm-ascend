@@ -47,7 +47,6 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm:8000/v1) → Ascend NP
 - `--gpu-memory-utilization 0.92`
 - `--enforce-eager` with `--compilation-config '{"mode":0}'` (disables graph compilation for Ascend compatibility)
 - `--reasoning-parser deepseek_r1` (strips `<think>...</think>` blocks; returns clean answer in `content`, reasoning in `reasoning_content`)
-- `--max-thinking-tokens 2048` (caps chain-of-thought token budget to avoid over-thinking simple queries)
 
 **Driver mounts** (host paths that must exist):
 - `/usr/local/dcmi`

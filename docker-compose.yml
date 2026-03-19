@@ -43,8 +43,6 @@ services:
       - --enforce-eager
       - --reasoning-parser
       - deepseek_r1
-      - --max-thinking-tokens
-      - "2048"
       - --compilation-config
       - '{"mode":0}'
       - --max-model-len
