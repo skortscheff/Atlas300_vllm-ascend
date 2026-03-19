@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What This Is
 
 A Docker Compose deployment for LLM inference on Ascend NPU hardware. Two services:
-- **vLLM** (`quay.io/ascend/vllm-ascend:v0.9.2rc1-310p-openeuler`) — serves the model on port 8000
+- **vLLM** (`quay.io/ascend/vllm-ascend:main-310p-openeuler`) — serves the model on port 8000
 - **Open WebUI** (`ghcr.io/open-webui/open-webui:latest`) — chat UI on port 3000
 
 ## Common Commands
@@ -36,16 +36,17 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm:8000/v1) → Ascend NP
 
 **Network:** Both services share the `llmnet` bridge network.
 
-**Model:** `${MODELS_DIR}/ds_r1_llama8b` (mounted read-only into container at `/models`)
+**Model:** `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B` (downloaded automatically from HuggingFace on first start; cached in the `hf-cache` Docker volume at `/root/.cache/huggingface`)
 
 **Hardware:** 2× Ascend 310P chips (`/dev/davinci2`, `/dev/davinci3`) with tensor-parallel-size=2
 
 **Key vLLM parameters:**
 - `--dtype float16`
 - `--tensor-parallel-size 2`
-- `--max-model-len 4096`
+- `--max-model-len 8192`
 - `--gpu-memory-utilization 0.92`
-- `--enforce-eager` with `--compilation-config '{"level":0}'` (disables graph compilation for Ascend compatibility)
+- `--enforce-eager` with `--compilation-config '{"mode":0}'` (disables graph compilation for Ascend compatibility)
+- `--reasoning-parser deepseek_r1` (strips `<think>...</think>` blocks; returns clean answer in `content`, reasoning in `reasoning_content`)
 
 **Driver mounts** (host paths that must exist):
 - `/usr/local/dcmi`

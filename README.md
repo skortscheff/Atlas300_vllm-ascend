@@ -6,17 +6,41 @@ A Docker Compose stack for running a local LLM inference server on **Huawei Asce
 
 | Service | Image | Port |
 |---------|-------|------|
-| [vLLM](https://github.com/vllm-project/vllm) (Ascend fork) | `quay.io/ascend/vllm-ascend:v0.9.2rc1-310p-openeuler` | 8000 |
+| [vLLM](https://github.com/vllm-project/vllm) (Ascend fork) | `quay.io/ascend/vllm-ascend:main-310p-openeuler` | 8000 |
 | [Open WebUI](https://github.com/open-webui/open-webui) | `ghcr.io/open-webui/open-webui:latest` | 3000 |
 
-**Model:** DeepSeek-R1 distilled Llama 8B (`ds_r1_llama8b`)
+**Model:** DeepSeek-R1 Distill Qwen 32B (`ds_r1_qwen32b`)
+
+## Hardware
+
+| Chip | Device | Total HBM | Notes |
+|------|--------|-----------|-------|
+| 0 | davinci2 | ~43 GB | — |
+| 1 | davinci3 | ~43 GB | — |
+| **Total** | | **~87 GB** | ~23 GB available for KV cache with 32B float16 |
+
+## Model Selection
+
+The 32B model was chosen based on the available HBM:
+
+| Model | VRAM (float16) | Fits? | Notes |
+|-------|---------------|-------|-------|
+| DeepSeek-R1 Distill Qwen **32B** | ~64 GB | ✅ | **Current — comfortable fit, no quantization needed** |
+| DeepSeek-R1 Distill Llama 70B | ~140 GB | ⚠️ | W8A8 quantization required (needs vllm-ascend ≥ v0.15.0) |
+| DeepSeek-R1 Distill Llama 8B | ~16 GB | ✅ | Previous model — underutilized VRAM |
 
 ## Requirements
 
 - Huawei Ascend 310P NPU (2 chips)
 - Ascend drivers installed on the host
 - Docker + Docker Compose
-- Model weights in `${MODELS_DIR}/ds_r1_llama8b`
+- Model weights in `${MODELS_DIR}/ds_r1_qwen32b`
+
+Download weights:
+```bash
+huggingface-cli download deepseek-ai/DeepSeek-R1-Distill-Qwen-32B \
+  --local-dir ${MODELS_DIR}/ds_r1_qwen32b
+```
 
 ### Required host paths
 
@@ -61,10 +85,11 @@ Both services communicate over an internal Docker bridge network (`llmnet`). The
 |-----------|-------|--------|
 | `--dtype` | `float16` | Reduces NPU memory usage |
 | `--tensor-parallel-size` | `2` | Splits model across both chips |
-| `--max-model-len` | `4096` | Max context window (input + output) |
+| `--max-model-len` | `8192` | Max context window (input + output) |
 | `--gpu-memory-utilization` | `0.92` | Uses 92% of NPU memory for KV cache |
 | `--enforce-eager` | — | Required for Ascend compatibility |
-| `--compilation-config` | `{"level":0}` | Disables graph compilation (Ascend) |
+| `--compilation-config` | `{"mode":0}` | Disables graph compilation (Ascend; `mode` key replaces deprecated `level`) |
+| `--reasoning-parser` | `deepseek_r1` | Parses DeepSeek-R1 `<think>` blocks — clean answer in `content`, reasoning in `reasoning_content` |
 
 ## NPU Device Mapping
 
