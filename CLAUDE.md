@@ -19,6 +19,37 @@ Two models are configured via Docker Compose profiles — only one can run at a 
 
 Open WebUI is always running and pre-configured with both endpoints. It shows whichever model is currently loaded.
 
+### Open WebUI custom model entries
+
+Two custom model entries are configured in the Open WebUI DB (`model` table):
+
+| UI name | DB id | base_model_id | params |
+|---------|-------|---------------|--------|
+| `Qwen3-32B (fast)` | `qwen3-32b` | `Qwen/Qwen3-32B` | `{"system": "/no_think"}` |
+
+**Qwen3-32B (fast)** suppresses the reasoning chain via Qwen3's native `/no_think` soft switch injected as the default system prompt. Users can override per-message by prefixing their message with `/think`.
+
+To update or rollback:
+```bash
+# Restore thinking (remove /no_think)
+docker exec openwebui python3 -c "
+import sqlite3
+conn = sqlite3.connect('/app/backend/data/webui.db')
+conn.execute(\"UPDATE model SET params='{}' WHERE id='qwen3-32b'\")
+conn.commit()
+conn.close()
+"
+
+# Re-apply /no_think
+docker exec openwebui python3 -c "
+import sqlite3, json
+conn = sqlite3.connect('/app/backend/data/webui.db')
+conn.execute(\"UPDATE model SET params=? WHERE id='qwen3-32b'\", (json.dumps({'system': '/no_think'}),))
+conn.commit()
+conn.close()
+"
+```
+
 ## Common Commands
 
 ```bash
@@ -51,7 +82,7 @@ npu-smi info
 ## Architecture
 
 ```
-User → Open WebUI (port 3000) → vLLM API (http://vllm:8000/v1) → Ascend NPU
+User → Open WebUI (port 3000) → vLLM API (http://vllm-deepseek:8000/v1 or http://vllm-qwen3:8000/v1) → Ascend NPU
 ```
 
 **Network:** Both services share the `llmnet` bridge network.
