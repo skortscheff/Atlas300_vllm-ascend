@@ -69,14 +69,6 @@ The 32B model was chosen based on the available HBM:
 - Huawei Ascend 310P NPU (2 chips)
 - Ascend drivers installed on the host
 - Docker + Docker Compose
-- Model weights in `${MODELS_DIR}/ds_r1_qwen32b`
-
-Download weights:
-```bash
-huggingface-cli download deepseek-ai/DeepSeek-R1-Distill-Qwen-32B \
-  --local-dir ${MODELS_DIR}/ds_r1_qwen32b
-```
-
 ### Required host paths
 
 ```
