@@ -29,6 +29,41 @@ The 32B model was chosen based on the available HBM:
 | DeepSeek-R1 Distill Llama 70B | ~140 GB | ⚠️ | W8A8 quantization required (needs vllm-ascend ≥ v0.15.0) |
 | DeepSeek-R1 Distill Llama 8B | ~16 GB | ✅ | Previous model — underutilized VRAM |
 
+## Environment
+
+### Host System
+
+| Component | Details |
+|-----------|---------|
+| **OS** | Ubuntu 20.04.6 LTS (Focal Fossa) |
+| **CPU** | 2× Intel Xeon Silver 4210 @ 2.20 GHz (2 sockets × 10 cores × 2 threads = 40 logical CPUs) |
+| **RAM** | 62 GiB |
+| **Swap** | 4 GiB |
+| **Disk** | 879 GB (`/dev/sda2`), ~428 GB free |
+
+### NPU Hardware
+
+| Chip | Model | HBM Total | Bus ID |
+|------|-------|-----------|--------|
+| davinci2 (chip 0) | Huawei Ascend 310P3 | 44,280 MB (~43 GB) | 0000:86:00.0 |
+| davinci3 (chip 1) | Huawei Ascend 310P3 | 43,693 MB (~43 GB) | 0000:86:00.0 |
+| **Total** | | **~87 GB HBM** | |
+
+> With DeepSeek-R1-Distill-Qwen-32B in float16 (~64 GB model weights), roughly 23 GB remains available for KV cache across both chips.
+
+### Software Versions
+
+| Software | Version |
+|----------|---------|
+| **Ascend Driver / npu-smi** | 25.2.0 |
+| **Ascend HAL** | 7.35.23 |
+| **Docker Engine** | 28.1.1 |
+| **Docker Compose** | v2.35.1 |
+| **vLLM image** | `quay.io/ascend/vllm-ascend:main-310p-openeuler` |
+| **Open WebUI image** | `ghcr.io/open-webui/open-webui:latest` |
+
+---
+
 ## Requirements
 
 - Huawei Ascend 310P NPU (2 chips)
