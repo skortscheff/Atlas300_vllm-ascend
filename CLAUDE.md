@@ -8,21 +8,41 @@ A Docker Compose deployment for LLM inference on Ascend NPU hardware. Two servic
 - **vLLM** (`quay.io/ascend/vllm-ascend:main-310p-openeuler`) — serves the model on port 8000
 - **Open WebUI** (`ghcr.io/open-webui/open-webui:latest`) — chat UI on port 3000
 
+## Models
+
+Two models are configured via Docker Compose profiles — only one can run at a time (both are 32B FP16 and saturate the NPU).
+
+| Profile | Model | Port | Reasoning parser |
+|---------|-------|------|-----------------|
+| `deepseek` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B` | 8000 | `deepseek_r1` |
+| `qwen3` | `Qwen/Qwen3-32B` | 8001 | `qwen3` |
+
+Open WebUI is always running and pre-configured with both endpoints. It shows whichever model is currently loaded.
+
 ## Common Commands
 
 ```bash
-# Start stack
-docker compose up -d
+# Start with DeepSeek
+docker compose --profile deepseek up -d
 
-# Stop stack
-docker compose down
+# Start with Qwen3
+docker compose --profile qwen3 up -d
+
+# Switch models (stop current, start other)
+docker compose --profile deepseek down
+docker compose --profile qwen3 up -d
+
+# Stop everything
+docker compose --profile deepseek down   # or --profile qwen3
+docker compose down                       # stops openwebui
 
 # View logs
-docker compose logs -f vllm
+docker compose logs -f vllm-deepseek
+docker compose logs -f vllm-qwen3
 docker compose logs -f openwebui
 
-# Restart a single service
-docker compose restart vllm
+# Restart a model service
+docker compose --profile deepseek restart vllm-deepseek
 
 # Check NPU status
 npu-smi info
@@ -62,6 +82,36 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm:8000/v1) → Ascend NP
 - **URL:** `http://localhost:3000`
 - **Admin email:** `admin@example.com`
 - **Database:** `openwebui-data/webui.db` (SQLite)
+
+### Stats Footer Function
+
+A filter function (`stats-footer`) is installed and active in Open WebUI. It appends a generation stats line to every assistant reply:
+
+```
+---
+`⚡ N.N tok/s · NNN gen · ctx NNN/8192 (N%)`
+```
+
+The function reads token usage from the Open WebUI SQLite DB. If it stops working, check:
+
+```bash
+# Verify function is active
+docker exec openwebui python3 -c "
+import sqlite3
+conn = sqlite3.connect('/app/backend/data/webui.db')
+print(conn.execute(\"SELECT id, is_active, is_global FROM function WHERE id='stats-footer'\").fetchone())
+conn.close()
+"
+
+# Re-enable if is_active = 0
+docker exec openwebui python3 -c "
+import sqlite3
+conn = sqlite3.connect('/app/backend/data/webui.db')
+conn.execute(\"UPDATE function SET is_active = 1 WHERE id = 'stats-footer'\")
+conn.commit()
+conn.close()
+"
+```
 
 ### Reset admin password
 
