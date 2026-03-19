@@ -1,0 +1,74 @@
+services:
+  vllm:
+    image: quay.io/ascend/vllm-ascend:v0.9.2rc1-310p-openeuler
+    container_name: vllm-ascend
+    restart: unless-stopped
+    ipc: host
+    networks: [llmnet]
+    ports: ["8000:8000"]
+    environment:
+      ASCEND_VISIBLE_DEVICES: "2,3"   # use both chips
+      OMP_NUM_THREADS: "1"
+      MALLOC_ARENA_MAX: "2"
+    devices:
+      - /dev/davinci2
+      - /dev/davinci3
+      - /dev/davinci_manager
+      - /dev/devmm_svm
+      - /dev/hisi_hdc
+    volumes:
+      # host drivers/tooling (adjust if paths differ on your system)
+      - /usr/local/dcmi:/usr/local/dcmi:ro
+      - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
+      - /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64:ro
+      - /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info:ro
+      - /etc/ascend_install.info:/etc/ascend_install.info:ro
+      # host models directory
+      - ${MODELS_DIR}:/models
+      # caches (optional but recommended)
+      - hf-cache:/root/.cache/hf
+      - vllm-cache:/root/.cache/vllm
+    command:
+      - vllm
+      - serve
+      - /models/ds_r1_llama8b
+      - --dtype
+      - float16
+      - --tensor-parallel-size
+      - "2"              # split across both chips (requested)
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --enforce-eager
+      - --compilation-config
+      - '{"level":0}'
+      - --max-model-len
+      - "4096"
+      - --max-num-batched-tokens
+      - "4096"
+      - --max-num-seqs
+      - "64"
+      - --gpu-memory-utilization
+      - "0.92"
+      - --swap-space
+      - "2"
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:latest
+    container_name: openwebui
+    restart: unless-stopped
+    networks: [llmnet]
+    ports: ["3000:8080"]
+    volumes:
+      - ./openwebui-data:/app/backend/data
+    environment:
+      OPENAI_API_BASE_URLS: http://vllm:8000/v1
+      OPENAI_API_KEYS: sk-no-key-required
+
+networks:
+  llmnet: {}
+
+volumes:
+  hf-cache:
+  vllm-cache:
