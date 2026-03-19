@@ -129,6 +129,55 @@ To display DeepSeek-R1 thinking as a collapsible block (instead of raw text), en
 
 This tells Open WebUI to render the `reasoning` field from the vLLM streaming response as a proper "Thinking..." section in the chat UI.
 
+## Open WebUI — Generation Stats Footer
+
+Every assistant reply ends with a compact stats line showing throughput, token counts, and context usage:
+
+```
+---
+`⚡ 11.3 tok/s · 243 gen · ctx 487/8192 (6%)`
+```
+
+This is implemented as an **Outlet Filter function** stored directly in `openwebui-data/webui.db`. It records the request start time in `inlet`, then reads `usage` from the completed response in `outlet` to compute tok/s and context percentage.
+
+To reinstall (e.g. after wiping the database):
+
+```bash
+# Copy the filter script into the container
+docker cp /tmp/stats_filter.py openwebui:/tmp/stats_filter.py
+
+# Insert into the function table
+docker exec openwebui python3 -c "
+import sqlite3, time
+with open('/tmp/stats_filter.py') as f:
+    content = f.read()
+conn = sqlite3.connect('/app/backend/data/webui.db')
+conn.execute('''
+    INSERT OR REPLACE INTO function
+      (id, user_id, name, type, content, meta, valves, is_active, is_global, updated_at, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+''', ('stats-footer','','Generation Stats Footer','filter', content,
+      '{\"description\":\"Appends tok/s and context stats to every reply\"}',
+      '{\"max_ctx\":8192}', 1, 1, int(time.time()), int(time.time())))
+conn.commit()
+conn.close()
+"
+docker compose restart openwebui
+```
+
+To remove:
+
+```bash
+docker exec openwebui python3 -c "
+import sqlite3
+conn = sqlite3.connect('/app/backend/data/webui.db')
+conn.execute(\"DELETE FROM function WHERE id='stats-footer'\")
+conn.commit()
+conn.close()
+"
+docker compose restart openwebui
+```
+
 ## NPU Device Mapping
 
 This setup uses `/dev/davinci2` and `/dev/davinci3`. If your system uses different device numbers, update `docker-compose.yml`:

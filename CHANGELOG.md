@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v1.9] — 2026-03-19
+
+### Added
+- **Generation Stats Footer** — Outlet Filter function inserted into `openwebui-data/webui.db` that appends a stats line (`⚡ tok/s · gen tokens · ctx used/max`) to every assistant reply. Reads `usage` from the vLLM response; elapsed time measured via `inlet`/`outlet` hooks. Active globally for all users and models.
+
+---
+
 ## [v1.8] — 2026-03-19
 
 ### Fixed
