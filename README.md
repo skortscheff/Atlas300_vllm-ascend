@@ -116,7 +116,18 @@ Both services communicate over an internal Docker bridge network (`llmnet`). The
 | `--gpu-memory-utilization` | `0.92` | Uses 92% of NPU memory for KV cache |
 | `--enforce-eager` | — | Required for Ascend compatibility |
 | `--compilation-config` | `{"mode":0}` | Disables graph compilation (Ascend; `mode` key replaces deprecated `level`) |
-| `--reasoning-parser` | `deepseek_r1` | Parses DeepSeek-R1 `<think>` blocks — clean answer in `content`, reasoning in `reasoning_content` |
+| `--reasoning-parser` | `deepseek_r1` | Required for clean output on this Ascend build. Streaming thinking tokens go to `delta.reasoning`; final answer to `delta.content` |
+
+## Open WebUI — Reasoning Display
+
+To display DeepSeek-R1 thinking as a collapsible block (instead of raw text), enable the reasoning capability in Open WebUI:
+
+1. Go to **Admin Panel → Models**
+2. Click the **DeepSeek-R1-Distill-Qwen-32B** model
+3. Enable the **Reasoning** capability toggle
+4. Save
+
+This tells Open WebUI to render the `reasoning` field from the vLLM streaming response as a proper "Thinking..." section in the chat UI.
 
 ## NPU Device Mapping
 

@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v1.8] — 2026-03-19
+
+### Fixed
+- **Reasoning display in Open WebUI** — `--reasoning-parser deepseek_r1` is required on this Ascend build; without it the raw model output is garbled. Removing it was attempted but reverted. The parser routes thinking tokens to `delta.reasoning` and the final answer to `delta.content`.
+- **Open WebUI reasoning config** — documented that the **Reasoning** capability toggle must be enabled on the model in Open WebUI Admin → Models for thinking to render as a collapsible block instead of raw text.
+
+### Reverted
+- Removal of `--reasoning-parser deepseek_r1` (caused garbled output on Ascend vLLM build)
+
+---
+
 ## [v1.6] — 2026-03-19
 
 ### Fixed

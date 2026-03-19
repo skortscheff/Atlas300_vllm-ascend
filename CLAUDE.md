@@ -46,7 +46,7 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm:8000/v1) → Ascend NP
 - `--max-model-len 8192`
 - `--gpu-memory-utilization 0.92`
 - `--enforce-eager` with `--compilation-config '{"mode":0}'` (disables graph compilation for Ascend compatibility)
-- `--reasoning-parser deepseek_r1` (strips `<think>...</think>` blocks; returns clean answer in `content`, reasoning in `reasoning_content`)
+- `--reasoning-parser deepseek_r1` (required for clean output on this Ascend build — streaming thinking tokens go to `delta.reasoning`, final answer to `delta.content`)
 
 **Driver mounts** (host paths that must exist):
 - `/usr/local/dcmi`
