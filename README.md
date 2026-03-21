@@ -21,7 +21,7 @@ A Docker Compose stack for running a local LLM inference server on **Huawei Asce
 
 ## Model Selection
 
-The 32B model was chosen based on the available HBM:
+The 32B model was chosen based on the available vRAM:
 
 | Model | VRAM (float16) | Fits? | Notes |
 |-------|---------------|-------|-------|
