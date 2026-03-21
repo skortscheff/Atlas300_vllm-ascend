@@ -71,7 +71,7 @@ The 32B model was chosen based on the available vRAM:
 ## Requirements
 
 - Huawei Ascend 310P NPU (2 chips)
-- Ascend drivers installed on the host
+- Ascend drivers and card firmware installed on the host (Sorry, you'll have to look really hard for these T_T ) 
 - Docker + Docker Compose
 ### Required host paths
 
