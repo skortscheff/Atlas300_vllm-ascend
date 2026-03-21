@@ -2,6 +2,8 @@
 
 A Docker Compose stack for running a local LLM inference server on **Huawei Ascend 310P NPU** hardware, with a chat web interface.
 
+Getting these cards to run and actually *do* something has been proven really difficult, but with a lot of googling, chatgpt, claude and gemini i've managed to get mine to output something legible. 
+
 ## Stack
 
 | Service | Image | Port |
