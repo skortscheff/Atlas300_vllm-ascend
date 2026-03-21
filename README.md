@@ -4,6 +4,8 @@ A Docker Compose stack for running a local LLM inference server on **Huawei Asce
 
 Getting these cards to run and actually *do* something has been proven really difficult, but with a lot of googling, chatgpt, claude and gemini i've managed to get mine to output something legible. 
 
+PLease don't mind the AI generated slop of documentation here :P it actually works. 
+
 ## Stack
 
 | Service | Image | Port |
