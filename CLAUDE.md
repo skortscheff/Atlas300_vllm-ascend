@@ -111,7 +111,7 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-deepseek:8000/v1 or ht
 ## Open WebUI Admin
 
 - **URL:** `http://localhost:3000`
-- **Admin email:** `admin@example.com`
+- **Admin email:** `admin@gmail.com`
 - **Database:** `openwebui-data/webui.db` (SQLite)
 
 ### Stats Footer Function
@@ -152,7 +152,7 @@ import bcrypt, sqlite3
 hashed = bcrypt.hashpw(b'NEWPASSWORD', bcrypt.gensalt()).decode()
 conn = sqlite3.connect('/app/backend/data/webui.db')
 cur = conn.cursor()
-cur.execute(\"UPDATE auth SET password = ? WHERE email = ?\", (hashed, 'admin@example.com'))
+cur.execute(\"UPDATE auth SET password = ? WHERE email = ?\", (hashed, 'admin@gmail.com'))
 conn.commit()
 print('Rows updated:', cur.rowcount)
 conn.close()
