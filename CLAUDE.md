@@ -10,14 +10,25 @@ A Docker Compose deployment for LLM inference on Ascend NPU hardware. Two servic
 
 ## Models
 
-Two models are configured via Docker Compose profiles — only one can run at a time (both are 32B FP16 and saturate the NPU).
+Three models are configured via Docker Compose profiles — only one can run at a time (large FP16 models that saturate the NPU).
 
 | Profile | Model | Port | Reasoning parser |
 |---------|-------|------|-----------------|
 | `deepseek` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B` | 8000 | `deepseek_r1` |
 | `qwen3` | `Qwen/Qwen3-32B` | 8001 | `qwen3` |
+| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | — |
 
-Open WebUI is always running and pre-configured with both endpoints. It shows whichever model is currently loaded.
+Open WebUI is always running and pre-configured with all three endpoints. It shows whichever model is currently loaded.
+
+### Switching profiles
+
+Use `switch.sh` — it stops all model containers, starts the target profile, and toggles Open WebUI model visibility:
+
+```bash
+./switch.sh deepseek
+./switch.sh qwen3
+./switch.sh qwen25coder
+```
 
 ### Open WebUI custom model entries
 
@@ -53,27 +64,23 @@ conn.close()
 ## Common Commands
 
 ```bash
-# Start with DeepSeek
+# Switch models (preferred)
+./switch.sh [deepseek|qwen3|qwen25coder]
+
+# Manual start
 docker compose --profile deepseek up -d
-
-# Start with Qwen3
 docker compose --profile qwen3 up -d
-
-# Switch models (stop current, start other)
-docker compose --profile deepseek down
-docker compose --profile qwen3 up -d
+docker compose --profile qwen25coder up -d
 
 # Stop everything
-docker compose --profile deepseek down   # or --profile qwen3
+docker compose --profile deepseek down   # or --profile qwen3 / qwen25coder
 docker compose down                       # stops openwebui
 
 # View logs
 docker compose logs -f vllm-deepseek
 docker compose logs -f vllm-qwen3
+docker compose logs -f vllm-qwen25coder
 docker compose logs -f openwebui
-
-# Restart a model service
-docker compose --profile deepseek restart vllm-deepseek
 
 # Check NPU status
 npu-smi info

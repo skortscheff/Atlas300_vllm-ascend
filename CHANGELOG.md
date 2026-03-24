@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v1.12] — 2026-03-24
+
+### Added
+- **Qwen2.5-Coder-14B-Instruct profile** (`qwen25coder`) — third model profile on port 8002. Purpose-built coding model; no reasoning parser required.
+- **`switch.sh`** — convenience script to switch between profiles. Stops all model containers, starts the target profile, and toggles Open WebUI model visibility (hides `Qwen3-32B (fast)` when qwen3 is not active).
+
+### Changed
+- **Open WebUI connections** now managed via Admin Panel → Settings → Connections (DB-stored). Env var `OPENAI_API_BASE_URLS` is only used on first-run with an empty DB; subsequent changes require updating via the UI or directly in SQLite.
+- **README** fully rewritten to reflect multi-profile setup and `switch.sh` usage.
+
+### Removed
+- `openai/gpt-oss-20b` profile — model uses MXFP4 quantization which is not supported by the Ascend vLLM backend.
+
+---
+
 ## [v1.9] — 2026-03-19
 
 ### Added

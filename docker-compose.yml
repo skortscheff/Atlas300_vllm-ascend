@@ -90,6 +90,37 @@ services:
       - --swap-space
       - "8"
 
+  vllm-qwen25coder:
+    <<: *vllm-common
+    container_name: vllm-qwen25coder
+    profiles: [qwen25coder]
+    ports: ["8002:8000"]
+    command:
+      - vllm
+      - serve
+      - Qwen/Qwen2.5-Coder-14B-Instruct
+      - --dtype
+      - float16
+      - --tensor-parallel-size
+      - "2"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --enforce-eager
+      - --compilation-config
+      - '{"mode":0}'
+      - --max-model-len
+      - "8192"
+      - --max-num-batched-tokens
+      - "8192"
+      - --max-num-seqs
+      - "32"
+      - --gpu-memory-utilization
+      - "0.95"
+      - --swap-space
+      - "8"
+
   openwebui:
     image: ghcr.io/open-webui/open-webui:latest
     container_name: openwebui
@@ -99,8 +130,8 @@ services:
     volumes:
       - ./openwebui-data:/app/backend/data
     environment:
-      OPENAI_API_BASE_URLS: "http://vllm-deepseek:8000/v1;http://vllm-qwen3:8000/v1"
-      OPENAI_API_KEYS: "sk-no-key-required;sk-no-key-required"
+      OPENAI_API_BASE_URLS: "http://vllm-deepseek:8000/v1;http://vllm-qwen3:8000/v1;http://vllm-qwen25coder:8000/v1"
+      OPENAI_API_KEYS: "sk-no-key-required;sk-no-key-required;sk-no-key-required"
 
 networks:
   llmnet: {}
