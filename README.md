@@ -111,6 +111,64 @@ Browser → Open WebUI (3000) → vLLM API (8000/8001/8002) → Ascend NPU (davi
 
 Both services share the `llmnet` Docker bridge network. The vLLM API is OpenAI-compatible — any tool supporting the OpenAI API can point at `http://localhost:800x/v1`.
 
+## API Access
+
+The vLLM API is OpenAI-compatible and accessible from any machine on the LAN.
+
+### Endpoint format
+
+```
+http://<LAN_IP>:<PORT>/v1
+```
+
+| Profile | Port |
+|---------|------|
+| `deepseek` | 8000 |
+| `qwen3` | 8001 |
+| `qwen25coder` | 8002 |
+
+No API key is required. Pass any non-empty string if the client requires one (e.g. `sk-no-key-required`).
+
+### Test with curl
+
+```bash
+# List available models
+curl http://<HOST_IP>:8002/v1/models
+
+# Chat completion
+curl http://<HOST_IP>:8002/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-Coder-14B-Instruct",
+    "messages": [{"role": "user", "content": "hello"}],
+    "max_tokens": 20
+  }'
+```
+
+### Python (openai SDK)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://<HOST_IP>:8002/v1",
+    api_key="sk-no-key-required",
+)
+
+response = client.chat.completions.create(
+    model="Qwen/Qwen2.5-Coder-14B-Instruct",
+    messages=[{"role": "user", "content": "Write a hello world in Python"}],
+)
+print(response.choices[0].message.content)
+```
+
+> **Firewall:** If ports are unreachable from the LAN, open them on the host:
+> ```bash
+> sudo ufw allow 8000/tcp
+> sudo ufw allow 8001/tcp
+> sudo ufw allow 8002/tcp
+> ```
+
 ## Key vLLM Parameters
 
 | Parameter | Value | Reason |

@@ -1,0 +1,204 @@
+# Guía de uso de la API de inferencia local
+
+Este servidor expone una API compatible con OpenAI en la red local. Cualquier herramienta o script que soporte la API de OpenAI puede apuntar a esta dirección sin modificaciones mayores.
+
+## Endpoints disponibles
+
+| Perfil activo | Modelo | URL base |
+|---------------|--------|----------|
+| `deepseek` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B` | `http://<HOST_IP>:8000/v1` |
+| `qwen3` | `Qwen/Qwen3-32B` | `http://<HOST_IP>:8001/v1` |
+| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | `http://<HOST_IP>:8002/v1` |
+
+> Solo un modelo puede estar activo a la vez. Pregunta al administrador cuál está cargado, o consulta el panel en http://<HOST_IP>:3000.
+
+**API key:** No se requiere autenticación. Si tu cliente lo exige, usa cualquier cadena de texto, por ejemplo `sk-local`.
+
+---
+
+## 1. Verificar que el servidor está activo
+
+```bash
+curl http://<HOST_IP>:8002/v1/models
+```
+
+Respuesta esperada (ejemplo con Qwen2.5-Coder):
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "Qwen/Qwen2.5-Coder-14B-Instruct",
+      "object": "model"
+    }
+  ]
+}
+```
+
+---
+
+## 2. Hacer una consulta desde la terminal (curl)
+
+```bash
+curl http://<HOST_IP>:8002/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-Coder-14B-Instruct",
+    "messages": [
+      {"role": "user", "content": "Explica qué es una API REST en dos párrafos."}
+    ],
+    "max_tokens": 300
+  }'
+```
+
+### Parámetros útiles
+
+| Parámetro | Descripción | Valor típico |
+|-----------|-------------|--------------|
+| `model` | ID del modelo activo (ver tabla arriba) | obligatorio |
+| `messages` | Lista de mensajes del hilo de conversación | obligatorio |
+| `max_tokens` | Límite de tokens en la respuesta | `512` |
+| `temperature` | Creatividad (0 = determinista, 1 = creativo) | `0.7` |
+| `stream` | Devuelve la respuesta en tiempo real (streaming) | `true` / `false` |
+
+---
+
+## 3. Uso desde Python
+
+### Instalación
+
+```bash
+pip install openai
+```
+
+### Ejemplo básico
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://<HOST_IP>:8002/v1",
+    api_key="sk-local",
+)
+
+respuesta = client.chat.completions.create(
+    model="Qwen/Qwen2.5-Coder-14B-Instruct",
+    messages=[
+        {"role": "system", "content": "Eres un asistente de programación experto."},
+        {"role": "user", "content": "Escribe una función en Python que invierta una cadena de texto."},
+    ],
+    max_tokens=512,
+    temperature=0.2,
+)
+
+print(respuesta.choices[0].message.content)
+```
+
+### Ejemplo con streaming
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://<HOST_IP>:8002/v1",
+    api_key="sk-local",
+)
+
+stream = client.chat.completions.create(
+    model="Qwen/Qwen2.5-Coder-14B-Instruct",
+    messages=[{"role": "user", "content": "¿Cuál es la diferencia entre una lista y una tupla en Python?"}],
+    max_tokens=512,
+    stream=True,
+)
+
+for chunk in stream:
+    delta = chunk.choices[0].delta.content
+    if delta:
+        print(delta, end="", flush=True)
+print()
+```
+
+---
+
+## 4. Uso desde JavaScript / Node.js
+
+### Instalación
+
+```bash
+npm install openai
+```
+
+### Ejemplo básico
+
+```javascript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://<HOST_IP>:8002/v1",
+  apiKey: "sk-local",
+});
+
+const respuesta = await client.chat.completions.create({
+  model: "Qwen/Qwen2.5-Coder-14B-Instruct",
+  messages: [
+    { role: "user", content: "¿Cómo funciona el event loop en JavaScript?" },
+  ],
+  max_tokens: 512,
+});
+
+console.log(respuesta.choices[0].message.content);
+```
+
+---
+
+## 5. Modelos con razonamiento (DeepSeek y Qwen3)
+
+Los modelos `deepseek` y `qwen3` tienen capacidad de razonamiento encadenado (*chain-of-thought*). El servidor separa el proceso de pensamiento de la respuesta final:
+
+- `delta.reasoning_content` — tokens del proceso de razonamiento interno
+- `delta.content` — respuesta final
+
+Si solo necesitas la respuesta final, ignora `reasoning_content`. La mayoría de clientes estándar ya hacen esto automáticamente.
+
+### Qwen3: modo rápido (sin razonamiento)
+
+Para obtener respuestas más rápidas sin cadena de pensamiento, agrega `/no_think` al inicio del mensaje de sistema:
+
+```python
+messages=[
+    {"role": "system", "content": "/no_think"},
+    {"role": "user", "content": "¿Cuánto es 15% de 340?"},
+]
+```
+
+Para forzar el razonamiento en un mensaje concreto, prefija tu mensaje con `/think`:
+
+```
+/think ¿Cuánto es la raíz cuadrada de 1764?
+```
+
+---
+
+## 6. Cambiar el modelo activo
+
+Desde el servidor (requiere acceso SSH):
+
+```bash
+./switch.sh deepseek       # DeepSeek-R1 Distill Qwen 32B  →  puerto 8000
+./switch.sh qwen3          # Qwen3-32B                      →  puerto 8001
+./switch.sh qwen25coder    # Qwen2.5-Coder-14B-Instruct     →  puerto 8002
+```
+
+El cambio tarda ~2 minutos. El script imprime la URL de la API al terminar.
+
+---
+
+## 7. Solución de problemas
+
+| Síntoma | Causa probable | Solución |
+|---------|----------------|----------|
+| `Connection refused` | El modelo no está iniciado | Ejecutar `./switch.sh <perfil>` en el servidor |
+| `Connection timed out` | Puerto bloqueado o IP incorrecta | Verificar IP con `hostname -I` en el servidor |
+| Respuesta muy lenta al inicio | El modelo aún está cargando | Esperar hasta ver `Application startup complete.` en los logs |
+| Error `model not found` | El `model` no coincide con el cargado | Consultar `/v1/models` para obtener el ID exacto |

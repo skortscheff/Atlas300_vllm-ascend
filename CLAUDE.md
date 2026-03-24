@@ -22,12 +22,17 @@ Open WebUI is always running and pre-configured with all three endpoints. It sho
 
 ### Switching profiles
 
-Use `switch.sh` — it stops all model containers, starts the target profile, and toggles Open WebUI model visibility:
+Use `switch.sh` — it stops all model containers, starts the target profile, toggles Open WebUI model visibility, and prints the active API endpoint:
 
 ```bash
 ./switch.sh deepseek
 ./switch.sh qwen3
 ./switch.sh qwen25coder
+```
+
+After startup it prints:
+```
+==> API ready at: http://<HOST_IP>:<PORT>/v1
 ```
 
 ### Open WebUI custom model entries
@@ -118,7 +123,7 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-deepseek:8000/v1 or ht
 ## Open WebUI Admin
 
 - **URL:** `http://localhost:3000`
-- **Admin email:** `admin@gmail.com`
+- **Admin email:** `admin@example.com`
 - **Database:** `openwebui-data/webui.db` (SQLite)
 
 ### Stats Footer Function
@@ -159,12 +164,24 @@ import bcrypt, sqlite3
 hashed = bcrypt.hashpw(b'NEWPASSWORD', bcrypt.gensalt()).decode()
 conn = sqlite3.connect('/app/backend/data/webui.db')
 cur = conn.cursor()
-cur.execute(\"UPDATE auth SET password = ? WHERE email = ?\", (hashed, 'admin@gmail.com'))
+cur.execute(\"UPDATE auth SET password = ? WHERE email = ?\", (hashed, 'admin@example.com'))
 conn.commit()
 print('Rows updated:', cur.rowcount)
 conn.close()
 "
 ```
+
+## LAN API Access
+
+The vLLM API is OpenAI-compatible and reachable from any machine on the LAN. `ufw` is inactive on this host — no firewall rules needed.
+
+| Profile | LAN endpoint |
+|---------|-------------|
+| `deepseek` | `http://<HOST_IP>:8000/v1` |
+| `qwen3` | `http://<HOST_IP>:8001/v1` |
+| `qwen25coder` | `http://<HOST_IP>:8002/v1` |
+
+No API key required. See `guia-api.md` for a full usage guide (Spanish) with curl, Python, and JavaScript examples.
 
 ## Deployment Notes
 

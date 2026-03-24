@@ -19,6 +19,12 @@ for p in "${PROFILES[@]}"; do
   $COMPOSE --profile "$p" down 2>/dev/null || true
 done
 
+declare -A PROFILE_PORT
+PROFILE_PORT[deepseek]=8000
+PROFILE_PORT[qwen3]=8001
+PROFILE_PORT[qwen25coder]=8002
+PORT="${PROFILE_PORT[$TARGET]}"
+
 echo "==> Starting profile: $TARGET"
 $COMPOSE --profile "$TARGET" up -d
 
@@ -39,4 +45,6 @@ print('Rows updated:', conn.total_changes)
 conn.close()
 "
 
+LAN_IP=$(hostname -I | awk '{print $1}')
 echo "==> Done. Watch logs with: docker compose logs -f vllm-$TARGET"
+echo "==> API ready at: http://$LAN_IP:$PORT/v1"
