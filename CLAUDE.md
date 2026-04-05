@@ -63,7 +63,10 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 - `--dtype float16`
 - `--tensor-parallel-size 2`
 - `--max-model-len 32768`
+- `--max-num-batched-tokens 32768`
+- `--max-num-seqs 32`
 - `--gpu-memory-utilization 0.95`
+- `--swap-space 8`
 - `--enforce-eager` with `--compilation-config '{"mode":0}'` (disables graph compilation for Ascend compatibility)
 
 **Driver mounts** (host paths that must exist):

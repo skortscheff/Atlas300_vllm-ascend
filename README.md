@@ -52,6 +52,8 @@ The entire `${MODELS_DIR}` directory is bind-mounted into the container as `/mod
 | **RAM** | 62 GiB |
 | **Ascend Driver** | 25.2.0 |
 | **Ascend Firmware** | 7.7.0.6.236 |
+| **CANN** | 8.5.1 |
+| **vLLM** | 0.17.0 (Ascend fork) |
 | **Docker Engine** | 28.1.1 |
 | **Docker Compose** | v2.35.1 |
 
@@ -130,6 +132,8 @@ print(response.choices[0].message.content)
 | `--tensor-parallel-size` | `2` | Splits model across both chips |
 | `--max-model-len` | `32768` | Max context window (input + output) |
 | `--gpu-memory-utilization` | `0.95` | Uses 95% of NPU memory for KV cache |
+| `--max-num-seqs` | `32` | Max concurrent sequences |
+| `--swap-space` | `8` | CPU swap space (GB) for KV cache overflow |
 | `--enforce-eager` | — | Required for Ascend 310P compatibility |
 | `--compilation-config` | `{"mode":0}` | Disables graph compilation (Ascend) |
 
