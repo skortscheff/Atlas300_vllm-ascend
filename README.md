@@ -35,8 +35,10 @@ docker compose logs -f vllm-qwen25coder
 
 | Path | Purpose |
 |------|---------|
-| `${MODELS_DIR}/hf-cache` | HuggingFace cache (mounted as `/root/.cache/huggingface` in container) |
-| `${MODELS_DIR}` | Also mounted as `/models` |
+| `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct` | Active model (28 GB, served directly) |
+| `vllm-atlas_vllm-cache` (Docker volume) | vLLM compilation cache |
+
+The entire `${MODELS_DIR}` directory is bind-mounted into the container as `/models`.
 
 ## Hardware
 

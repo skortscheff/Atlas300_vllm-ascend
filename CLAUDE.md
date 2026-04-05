@@ -55,7 +55,7 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 
 **Network:** Both services share the `llmnet` bridge network.
 
-**Model:** `Qwen/Qwen2.5-Coder-14B-Instruct` (downloaded automatically from HuggingFace on first start; cached at `${MODELS_DIR}/hf-cache`)
+**Model:** `Qwen/Qwen2.5-Coder-14B-Instruct` — stored at `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct`, mounted into the container as `/models/Qwen2.5-Coder-14B-Instruct`
 
 **Hardware:** 2× Atlas 300I Duo cards installed; only one is active (`/dev/davinci0`, `/dev/davinci1`). Second card fails to initialize (firmware issue).
 
@@ -73,7 +73,7 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 - `/usr/local/Ascend/driver/version.info`
 - `/etc/ascend_install.info`
 
-**Volumes:** HuggingFace cache is a bind mount at `${MODELS_DIR}/hf-cache`. `vllm-cache` is a named Docker volume. `openwebui-data/` is a bind mount in the project directory. `${MODELS_DIR}` is also mounted as `/models`.
+**Volumes:** Model is a bind mount at `${MODELS_DIR}` → `/models`. `vllm-cache` is a named Docker volume. `openwebui-data/` is a bind mount in the project directory.
 
 ## Open WebUI Admin
 
