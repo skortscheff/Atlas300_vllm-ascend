@@ -4,12 +4,12 @@ x-vllm-common: &vllm-common
   ipc: host
   networks: [llmnet]
   environment:
-    ASCEND_VISIBLE_DEVICES: "2,3"
+    ASCEND_VISIBLE_DEVICES: "0,1"
     OMP_NUM_THREADS: "1"
     MALLOC_ARENA_MAX: "2"
   devices:
-    - /dev/davinci2
-    - /dev/davinci3
+    - /dev/davinci0
+    - /dev/davinci1
     - /dev/davinci_manager
     - /dev/devmm_svm
     - /dev/hisi_hdc
@@ -20,76 +20,10 @@ x-vllm-common: &vllm-common
     - /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info:ro
     - /etc/ascend_install.info:/etc/ascend_install.info:ro
     - ${MODELS_DIR}:/models
-    - hf-cache:/root/.cache/huggingface
+    - ${MODELS_DIR}/hf-cache:/root/.cache/huggingface
     - vllm-cache:/root/.cache/vllm
 
 services:
-  vllm-deepseek:
-    <<: *vllm-common
-    container_name: vllm-deepseek
-    profiles: [deepseek]
-    ports: ["8000:8000"]
-    command:
-      - vllm
-      - serve
-      - deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
-      - --dtype
-      - float16
-      - --tensor-parallel-size
-      - "2"
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8000"
-      - --enforce-eager
-      - --reasoning-parser
-      - deepseek_r1
-      - --compilation-config
-      - '{"mode":0}'
-      - --max-model-len
-      - "8192"
-      - --max-num-batched-tokens
-      - "8192"
-      - --max-num-seqs
-      - "32"
-      - --gpu-memory-utilization
-      - "0.95"
-      - --swap-space
-      - "8"
-
-  vllm-qwen3:
-    <<: *vllm-common
-    container_name: vllm-qwen3
-    profiles: [qwen3]
-    ports: ["8001:8000"]
-    command:
-      - vllm
-      - serve
-      - Qwen/Qwen3-32B
-      - --dtype
-      - float16
-      - --tensor-parallel-size
-      - "2"
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8000"
-      - --enforce-eager
-      - --reasoning-parser
-      - qwen3          # remove if your vllm-ascend build doesn't support it
-      - --compilation-config
-      - '{"mode":0}'
-      - --max-model-len
-      - "8192"
-      - --max-num-batched-tokens
-      - "8192"
-      - --max-num-seqs
-      - "32"
-      - --gpu-memory-utilization
-      - "0.95"
-      - --swap-space
-      - "8"
-
   vllm-qwen25coder:
     <<: *vllm-common
     container_name: vllm-qwen25coder
@@ -111,9 +45,9 @@ services:
       - --compilation-config
       - '{"mode":0}'
       - --max-model-len
-      - "8192"
+      - "32768"
       - --max-num-batched-tokens
-      - "8192"
+      - "32768"
       - --max-num-seqs
       - "32"
       - --gpu-memory-utilization
@@ -130,12 +64,11 @@ services:
     volumes:
       - ./openwebui-data:/app/backend/data
     environment:
-      OPENAI_API_BASE_URLS: "http://vllm-deepseek:8000/v1;http://vllm-qwen3:8000/v1;http://vllm-qwen25coder:8000/v1"
-      OPENAI_API_KEYS: "sk-no-key-required;sk-no-key-required;sk-no-key-required"
+      OPENAI_API_BASE_URLS: "http://vllm-qwen25coder:8000/v1"
+      OPENAI_API_KEYS: "sk-no-key-required"
 
 networks:
   llmnet: {}
 
 volumes:
-  hf-cache:
   vllm-cache:

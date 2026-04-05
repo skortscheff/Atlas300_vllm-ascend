@@ -5,111 +5,66 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What This Is
 
 A Docker Compose deployment for LLM inference on Ascend NPU hardware. Two services:
-- **vLLM** (`quay.io/ascend/vllm-ascend:main-310p-openeuler`) — serves the model on port 8000
+- **vLLM** (`quay.io/ascend/vllm-ascend:main-310p-openeuler`) — serves the model on port 8002
 - **Open WebUI** (`ghcr.io/open-webui/open-webui:latest`) — chat UI on port 3000
 
 ## Models
 
-Three models are configured via Docker Compose profiles — only one can run at a time (large FP16 models that saturate the NPU).
+One model is active:
 
-| Profile | Model | Port | Reasoning parser |
-|---------|-------|------|-----------------|
-| `deepseek` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B` | 8000 | `deepseek_r1` |
-| `qwen3` | `Qwen/Qwen3-32B` | 8001 | `qwen3` |
-| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | — |
+| Profile | Model | Port | Status |
+|---------|-------|------|--------|
+| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | ✅ Active |
 
-Open WebUI is always running and pre-configured with all three endpoints. It shows whichever model is currently loaded.
-
-### Switching profiles
-
-Use `switch.sh` — it stops all model containers, starts the target profile, toggles Open WebUI model visibility, and prints the active API endpoint:
+### Starting
 
 ```bash
-./switch.sh deepseek
-./switch.sh qwen3
-./switch.sh qwen25coder
-```
-
-After startup it prints:
-```
-==> API ready at: http://<HOST_IP>:<PORT>/v1
+docker compose --profile qwen25coder up -d
 ```
 
 ### Open WebUI custom model entries
 
-Two custom model entries are configured in the Open WebUI DB (`model` table):
-
-| UI name | DB id | base_model_id | params |
-|---------|-------|---------------|--------|
-| `Qwen3-32B (fast)` | `qwen3-32b` | `Qwen/Qwen3-32B` | `{"system": "/no_think"}` |
-
-**Qwen3-32B (fast)** suppresses the reasoning chain via Qwen3's native `/no_think` soft switch injected as the default system prompt. Users can override per-message by prefixing their message with `/think`.
-
-To update or rollback:
-```bash
-# Restore thinking (remove /no_think)
-docker exec openwebui python3 -c "
-import sqlite3
-conn = sqlite3.connect('/app/backend/data/webui.db')
-conn.execute(\"UPDATE model SET params='{}' WHERE id='qwen3-32b'\")
-conn.commit()
-conn.close()
-"
-
-# Re-apply /no_think
-docker exec openwebui python3 -c "
-import sqlite3, json
-conn = sqlite3.connect('/app/backend/data/webui.db')
-conn.execute(\"UPDATE model SET params=? WHERE id='qwen3-32b'\", (json.dumps({'system': '/no_think'}),))
-conn.commit()
-conn.close()
-"
-```
+| UI name | DB id | Notes |
+|---------|-------|-------|
+| `Qwen/Qwen2.5-Coder-14B-Instruct` | `Qwen/Qwen2.5-Coder-14B-Instruct` | Default — no custom params |
 
 ## Common Commands
 
 ```bash
-# Switch models (preferred)
-./switch.sh [deepseek|qwen3|qwen25coder]
-
-# Manual start
-docker compose --profile deepseek up -d
-docker compose --profile qwen3 up -d
+# Start
 docker compose --profile qwen25coder up -d
 
 # Stop everything
-docker compose --profile deepseek down   # or --profile qwen3 / qwen25coder
-docker compose down                       # stops openwebui
+docker compose --profile qwen25coder down
+docker compose down                          # stops openwebui
 
 # View logs
-docker compose logs -f vllm-deepseek
-docker compose logs -f vllm-qwen3
 docker compose logs -f vllm-qwen25coder
 docker compose logs -f openwebui
 
 # Check NPU status
 npu-smi info
+npu-smi info -l
 ```
 
 ## Architecture
 
 ```
-User → Open WebUI (port 3000) → vLLM API (http://vllm-deepseek:8000/v1 or http://vllm-qwen3:8000/v1) → Ascend NPU
+User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) → Ascend NPU
 ```
 
 **Network:** Both services share the `llmnet` bridge network.
 
-**Model:** `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B` (downloaded automatically from HuggingFace on first start; cached in the `hf-cache` Docker volume at `/root/.cache/huggingface`)
+**Model:** `Qwen/Qwen2.5-Coder-14B-Instruct` (downloaded automatically from HuggingFace on first start; cached at `${MODELS_DIR}/hf-cache`)
 
-**Hardware:** 2× Ascend 310P chips (`/dev/davinci2`, `/dev/davinci3`) with tensor-parallel-size=2
+**Hardware:** 2× Atlas 300I Duo cards installed; only one is active (`/dev/davinci0`, `/dev/davinci1`). Second card fails to initialize after firmware reflash — see `TROUBLESHOOTING-second-card.md`.
 
 **Key vLLM parameters:**
 - `--dtype float16`
 - `--tensor-parallel-size 2`
 - `--max-model-len 8192`
-- `--gpu-memory-utilization 0.92`
+- `--gpu-memory-utilization 0.95`
 - `--enforce-eager` with `--compilation-config '{"mode":0}'` (disables graph compilation for Ascend compatibility)
-- `--reasoning-parser deepseek_r1` (required for clean output on this Ascend build — streaming thinking tokens go to `delta.reasoning`, final answer to `delta.content`)
 
 **Driver mounts** (host paths that must exist):
 - `/usr/local/dcmi`
@@ -118,7 +73,7 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-deepseek:8000/v1 or ht
 - `/usr/local/Ascend/driver/version.info`
 - `/etc/ascend_install.info`
 
-**Volumes:** `hf-cache` and `vllm-cache` are named Docker volumes for persistent caching. `openwebui-data/` is a bind mount in the project directory.
+**Volumes:** HuggingFace cache is a bind mount at `${MODELS_DIR}/hf-cache`. `vllm-cache` is a named Docker volume. `openwebui-data/` is a bind mount in the project directory. `${MODELS_DIR}` is also mounted as `/models`.
 
 ## Open WebUI Admin
 
@@ -177,14 +132,12 @@ The vLLM API is OpenAI-compatible and reachable from any machine on the LAN. `uf
 
 | Profile | LAN endpoint |
 |---------|-------------|
-| `deepseek` | `http://<HOST_IP>:8000/v1` |
-| `qwen3` | `http://<HOST_IP>:8001/v1` |
 | `qwen25coder` | `http://<HOST_IP>:8002/v1` |
 
 No API key required. See `guia-api.md` for a full usage guide (Spanish) with curl, Python, and JavaScript examples.
 
 ## Deployment Notes
 
-- NPU devices on this host are `/dev/davinci2` and `/dev/davinci3` (not 0/1 — update `docker-compose.yml` accordingly if re-deploying on different hardware)
-- Before starting, ensure no other containers are using ports 8000 or 3000
+- NPU devices on this host are `/dev/davinci0` and `/dev/davinci1`
+- Before starting, ensure no other containers are using ports 8002 or 3000
 - vLLM takes ~2 minutes to load the model; watch for `Application startup complete.` in logs before sending requests
