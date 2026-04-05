@@ -32,6 +32,8 @@ services:
       - vllm
       - serve
       - /models/Qwen2.5-Coder-14B-Instruct
+      - --served-model-name
+      - Qwen2.5-Coder-14B-Instruct
       - --dtype
       - float16
       - --tensor-parallel-size
