@@ -57,12 +57,12 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 
 **Model:** `Qwen/Qwen2.5-Coder-14B-Instruct` (downloaded automatically from HuggingFace on first start; cached at `${MODELS_DIR}/hf-cache`)
 
-**Hardware:** 2× Atlas 300I Duo cards installed; only one is active (`/dev/davinci0`, `/dev/davinci1`). Second card fails to initialize after firmware reflash — see `TROUBLESHOOTING-second-card.md`.
+**Hardware:** 2× Atlas 300I Duo cards installed; only one is active (`/dev/davinci0`, `/dev/davinci1`). Second card fails to initialize (firmware issue).
 
 **Key vLLM parameters:**
 - `--dtype float16`
 - `--tensor-parallel-size 2`
-- `--max-model-len 8192`
+- `--max-model-len 32768`
 - `--gpu-memory-utilization 0.95`
 - `--enforce-eager` with `--compilation-config '{"mode":0}'` (disables graph compilation for Ascend compatibility)
 
@@ -87,7 +87,7 @@ A filter function (`stats-footer`) is installed and active in Open WebUI. It app
 
 ```
 ---
-`⚡ N.N tok/s · NNN gen · ctx NNN/8192 (N%)`
+`⚡ N.N tok/s · NNN gen · ctx NNN/32768 (N%)`
 ```
 
 The function reads token usage from the Open WebUI SQLite DB. If it stops working, check:

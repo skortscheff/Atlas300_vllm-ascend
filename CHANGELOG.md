@@ -4,6 +4,24 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v1.14] — 2026-04-05
+
+### Changed
+- **Single profile** — removed `qwen35` and all other profiles. Only `qwen25coder` (Qwen2.5-Coder-14B-Instruct, port 8002) remains.
+- **Context window** — increased `--max-model-len` and `--max-num-batched-tokens` from 8192 to **32768** tokens (~6 GB KV cache per chip, ~7 GB headroom remaining).
+- **Device paths** — updated to `/dev/davinci0` and `/dev/davinci1` (renumbered after reboot; previously `davinci2`/`davinci3`).
+- **`ASCEND_VISIBLE_DEVICES`** — updated from `"2,3"` to `"0,1"` to match new device numbering.
+
+### Removed
+- `switch.sh` — no longer needed with a single profile.
+- `TROUBLESHOOTING-second-card.md` — second card investigation concluded; card remains inactive.
+- `qwen35` service and profile — Qwen3.5-27B uses hybrid linear attention (Triton gated LayerNorm) which is not supported by the current vllm-ascend 310P image.
+
+### Performance
+- Generation throughput: ~10.4 tok/s @ 800 tokens (Qwen2.5-Coder-14B, float16, TP=2)
+
+---
+
 ## [v1.12] — 2026-03-24
 
 ### Added
