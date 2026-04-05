@@ -136,36 +136,6 @@ print(response.choices[0].message.content)
 - **URL:** http://localhost:3000
 - **Admin:** `admin@example.com`
 
-### Generation Stats Footer
-
-Every assistant reply ends with:
-
-```
----
-`⚡ 11.3 tok/s · 243 gen · ctx 487/32768 (1%)`
-```
-
-If it stops working:
-
-```bash
-# Check status
-docker exec openwebui python3 -c "
-import sqlite3
-conn = sqlite3.connect('/app/backend/data/webui.db')
-print(conn.execute(\"SELECT id, is_active FROM function WHERE id='stats-footer'\").fetchone())
-conn.close()
-"
-
-# Re-enable
-docker exec openwebui python3 -c "
-import sqlite3
-conn = sqlite3.connect('/app/backend/data/webui.db')
-conn.execute(\"UPDATE function SET is_active = 1 WHERE id = 'stats-footer'\")
-conn.commit()
-conn.close()
-"
-```
-
 ### Reset admin password
 
 ```bash

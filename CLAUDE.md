@@ -81,36 +81,6 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 - **Admin email:** `admin@example.com`
 - **Database:** `openwebui-data/webui.db` (SQLite)
 
-### Stats Footer Function
-
-A filter function (`stats-footer`) is installed and active in Open WebUI. It appends a generation stats line to every assistant reply:
-
-```
----
-`⚡ N.N tok/s · NNN gen · ctx NNN/32768 (N%)`
-```
-
-The function reads token usage from the Open WebUI SQLite DB. If it stops working, check:
-
-```bash
-# Verify function is active
-docker exec openwebui python3 -c "
-import sqlite3
-conn = sqlite3.connect('/app/backend/data/webui.db')
-print(conn.execute(\"SELECT id, is_active, is_global FROM function WHERE id='stats-footer'\").fetchone())
-conn.close()
-"
-
-# Re-enable if is_active = 0
-docker exec openwebui python3 -c "
-import sqlite3
-conn = sqlite3.connect('/app/backend/data/webui.db')
-conn.execute(\"UPDATE function SET is_active = 1 WHERE id = 'stats-footer'\")
-conn.commit()
-conn.close()
-"
-```
-
 ### Reset admin password
 
 ```bash
