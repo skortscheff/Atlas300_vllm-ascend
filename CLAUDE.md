@@ -14,16 +14,12 @@ One model is active:
 
 | Profile | Model | Port | Status |
 |---------|-------|------|--------|
-| `qwen3` | `Qwen/Qwen3-14B` | 8003 | ✅ Active |
-| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | ⏸ Available |
+| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | ✅ Active |
+| `qwen3` | `Qwen/Qwen3-14B` | 8003 | ❌ Incompatible — garbled output on stable image (see Known Issues) |
 
 ### Starting
 
 ```bash
-# Active model (Qwen3-14B general)
-docker compose --profile qwen3 up -d
-
-# Coding model (Qwen2.5-Coder-14B) — cannot run simultaneously
 docker compose --profile qwen25coder up -d
 ```
 
@@ -60,9 +56,7 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 
 **Network:** Both services share the `llmnet` bridge network.
 
-**Active model:** `Qwen/Qwen3-14B` — stored at `${MODELS_DIR}/Qwen3-14B`, mounted as `/models/Qwen3-14B`
-
-**Available model:** `Qwen/Qwen2.5-Coder-14B-Instruct` — stored at `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct`
+**Model:** `Qwen/Qwen2.5-Coder-14B-Instruct` — stored at `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct`, mounted into the container as `/models/Qwen2.5-Coder-14B-Instruct`
 
 **Hardware:** 2× Atlas 300I Duo cards installed; only one is active (`/dev/davinci0`, `/dev/davinci1`). Second card fails to initialize (firmware issue).
 
@@ -113,7 +107,6 @@ The vLLM API is OpenAI-compatible and reachable from any machine on the LAN. `uf
 
 | Profile | LAN endpoint |
 |---------|-------------|
-| `qwen3` | `http://<HOST_IP>:8003/v1` |
 | `qwen25coder` | `http://<HOST_IP>:8002/v1` |
 
 No API key required. See `guia-api.md` for a full usage guide (Spanish) with curl, Python, and JavaScript examples.
@@ -167,6 +160,7 @@ Evaluated for Ascend 310P (Atlas 300I Duo). Decision: **stay on vLLM-Ascend**.
 |---|---|---|
 | `main-310p-openeuler` @ 2026-03-19 (ID: `7d210d233141`) | ✅ Working | Last confirmed stable image |
 | `main-310p-openeuler` @ 2026-04-07 (digest: `354db061...`) | ❌ Broken | Two regressions: (1) `--swap-space` argument removed with no warning; (2) Triton compiler crashes on first inference with `MLIRCompilationError: Cannot find option named 'Ascend310P3'` in `penalties.py` — affects all requests. Roll back to `7d210d233141` if this image is pulled. |
+| `Qwen3-14B` model | ❌ Incompatible | Garbled/repeated words in output on the stable image. Final answers are correct but `<think>` stream is corrupted. Root cause: stable image (2026-03-19) predates Qwen3's architecture changes. Requires a newer vllm-ascend image that itself has Triton regressions — blocked until upstream fix. |
 
 ### Rolling back to a previous image
 
