@@ -14,11 +14,16 @@ One model is active:
 
 | Profile | Model | Port | Status |
 |---------|-------|------|--------|
-| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | ✅ Active |
+| `qwen3` | `Qwen/Qwen3-14B` | 8003 | ✅ Active |
+| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | ⏸ Available |
 
 ### Starting
 
 ```bash
+# Active model (Qwen3-14B general)
+docker compose --profile qwen3 up -d
+
+# Coding model (Qwen2.5-Coder-14B) — cannot run simultaneously
 docker compose --profile qwen25coder up -d
 ```
 
@@ -55,7 +60,9 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 
 **Network:** Both services share the `llmnet` bridge network.
 
-**Model:** `Qwen/Qwen2.5-Coder-14B-Instruct` — stored at `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct`, mounted into the container as `/models/Qwen2.5-Coder-14B-Instruct`
+**Active model:** `Qwen/Qwen3-14B` — stored at `${MODELS_DIR}/Qwen3-14B`, mounted as `/models/Qwen3-14B`
+
+**Available model:** `Qwen/Qwen2.5-Coder-14B-Instruct` — stored at `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct`
 
 **Hardware:** 2× Atlas 300I Duo cards installed; only one is active (`/dev/davinci0`, `/dev/davinci1`). Second card fails to initialize (firmware issue).
 
@@ -106,6 +113,7 @@ The vLLM API is OpenAI-compatible and reachable from any machine on the LAN. `uf
 
 | Profile | LAN endpoint |
 |---------|-------------|
+| `qwen3` | `http://<HOST_IP>:8003/v1` |
 | `qwen25coder` | `http://<HOST_IP>:8002/v1` |
 
 No API key required. See `guia-api.md` for a full usage guide (Spanish) with curl, Python, and JavaScript examples.
