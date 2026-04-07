@@ -1,5 +1,5 @@
 x-vllm-common: &vllm-common
-  image: quay.io/ascend/vllm-ascend:main-310p-openeuler
+  image: quay.io/ascend/vllm-ascend:main-310p-openeuler-stable
   restart: unless-stopped
   ipc: host
   networks: [llmnet]
@@ -53,8 +53,6 @@ services:
       - "32"
       - --gpu-memory-utilization
       - "0.95"
-      - --swap-space
-      - "8"
 
   openwebui:
     image: ghcr.io/open-webui/open-webui:latest

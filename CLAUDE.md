@@ -66,8 +66,9 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 - `--max-num-batched-tokens 32768`
 - `--max-num-seqs 32`
 - `--gpu-memory-utilization 0.95`
-- `--swap-space 8`
 - `--enforce-eager` with `--compilation-config '{"mode":0}'` (disables graph compilation for Ascend compatibility)
+
+> **Note:** `--swap-space` was removed in the `main-310p-openeuler` image pulled 2026-04-07 — it is no longer a recognized argument.
 
 **Driver mounts** (host paths that must exist):
 - `/usr/local/dcmi`
@@ -114,3 +115,57 @@ No API key required. See `guia-api.md` for a full usage guide (Spanish) with cur
 - NPU devices on this host are `/dev/davinci0` and `/dev/davinci1`
 - Before starting, ensure no other containers are using ports 8002 or 3000
 - vLLM takes ~2 minutes to load the model; watch for `Application startup complete.` in logs before sending requests
+
+## Performance Baseline
+
+Measured 2026-04-07 on stable image (`main-310p-openeuler` @ 2026-03-19):
+
+| Metric | Value |
+|--------|-------|
+| Model | Qwen2.5-Coder-14B-Instruct |
+| Prompt tokens | 58 |
+| Completion tokens | 512 |
+| Total time | 47s |
+| **Throughput** | **~10.9 tok/s** |
+
+Single-request, eager mode, no graph compilation.
+
+## Alternative Inference Frameworks (Evaluated 2026-04-07)
+
+Evaluated for Ascend 310P (Atlas 300I Duo). Decision: **stay on vLLM-Ascend**.
+
+| Framework | 310P Support | OpenAI API | Docker | Verdict |
+|-----------|-------------|------------|--------|---------|
+| **vLLM-Ascend** | Yes (experimental) | Yes | Pre-built | ✅ Current stack — best option |
+| **llama.cpp CANN** | Yes (FP16/F32 only) | Yes | Must build | ❌ No pre-built image; FP16 GGUF ~28GB tight fit; no Ascend-specific kernels; unproven at 14B on 310P |
+| **SGLang** | 910-series only | Yes | Pre-built | ❌ Not for 310P |
+| **MindIE** | Unclear | Yes | Gated | ❌ Poor docs, requires Huawei account |
+| **Xinference** | Via vLLM/llama.cpp only | Yes | Pre-built | ❌ Orchestration layer only, no added value |
+| **Ollama** | No | — | — | ❌ No Ascend backend |
+
+### llama.cpp CANN — detailed notes
+
+- CANN version in vllm container: **8.5.1**
+- Build base image needed: `ascendai/cann:8.5.1-310p-openeuler22.03-py3.10`
+- No pre-built Docker image — must build from source (~30 min)
+- Model must be converted to FP16 GGUF (~28GB for 14B); Q4/Q8 matmul falls back to CPU on 310P
+- Context >8192 tokens pushes HBM limits with FP16
+- Estimated throughput: 5–12 tok/s (no public 310P benchmark at 14B)
+- Conclusion: more setup work for likely worse performance
+
+## Known Issues / Image History
+
+| Image pulled | Status | Notes |
+|---|---|---|
+| `main-310p-openeuler` @ 2026-03-19 (ID: `7d210d233141`) | ✅ Working | Last confirmed stable image |
+| `main-310p-openeuler` @ 2026-04-07 (digest: `354db061...`) | ❌ Broken | Two regressions: (1) `--swap-space` argument removed with no warning; (2) Triton compiler crashes on first inference with `MLIRCompilationError: Cannot find option named 'Ascend310P3'` in `penalties.py` — affects all requests. Roll back to `7d210d233141` if this image is pulled. |
+
+### Rolling back to a previous image
+
+```bash
+# Pin docker-compose.yml image to working version:
+# image: quay.io/ascend/vllm-ascend@sha256:<digest>
+# or reference by image ID directly:
+docker tag 7d210d233141 quay.io/ascend/vllm-ascend:main-310p-openeuler-stable
+# Then update docker-compose.yml to use :main-310p-openeuler-stable
+```
