@@ -17,8 +17,21 @@ All notable changes to this project are documented here.
 - `TROUBLESHOOTING-second-card.md` — second card investigation concluded; card remains inactive.
 - `qwen35` service and profile — Qwen3.5-27B uses hybrid linear attention (Triton gated LayerNorm) which is not supported by the current vllm-ascend 310P image.
 
+## [v1.15] — 2026-04-21
+
+### Changed
+- **Compose startup simplified** — removed Docker Compose `profiles`; the default `docker compose up -d` now starts the working `qwen25coder` stack directly.
+- **Absolute model bind mount** — the compose file now mounts `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct` directly into the container, so model loading is independent of this repository's location.
+- **Baseline refreshed** — `WORKING-STATE.md` and `README.md` now reflect the validated 2026-04-21 stack state and benchmark.
+
+### Removed
+- `qwen25coder-awq` service — unsupported on Ascend NPU.
+- `qwen3` service — obsolete experimental path, not part of the working stack.
+- `docker-compose.yml.bak`, `llama-cpp-cann.yml`, `mindie-investigation.md`, and `mindie-config/` — archived experiments removed to keep the repo focused on the working deployment.
+
 ### Performance
-- Generation throughput: ~10.4 tok/s @ 800 tokens (Qwen2.5-Coder-14B, float16, TP=2)
+- OpenAI-compatible API verified on `http://127.0.0.1:8002/v1`
+- Generation throughput: `10.95 tok/s` at `311` generated tokens (`47` prompt tokens, `28.394 s`, `Qwen2.5-Coder-14B-Instruct`, float16, TP=2)
 
 ---
 

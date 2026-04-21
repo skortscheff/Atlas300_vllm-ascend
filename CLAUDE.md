@@ -12,15 +12,14 @@ A Docker Compose deployment for LLM inference on Ascend NPU hardware. Two servic
 
 One model is active:
 
-| Profile | Model | Port | Status |
-|---------|-------|------|--------|
-| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | ✅ Active |
-| `qwen3` | `Qwen/Qwen3-14B` | 8003 | ❌ Incompatible — garbled output on stable image (see Known Issues) |
+| Model | Port | Status |
+|-------|------|--------|
+| `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | ✅ Active |
 
 ### Starting
 
 ```bash
-docker compose --profile qwen25coder up -d
+docker compose up -d
 ```
 
 ### Open WebUI custom model entries
@@ -33,11 +32,10 @@ docker compose --profile qwen25coder up -d
 
 ```bash
 # Start
-docker compose --profile qwen25coder up -d
+docker compose up -d
 
 # Stop everything
-docker compose --profile qwen25coder down
-docker compose down                          # stops openwebui
+docker compose down
 
 # View logs
 docker compose logs -f vllm-qwen25coder
@@ -56,7 +54,7 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 
 **Network:** Both services share the `llmnet` bridge network.
 
-**Model:** `Qwen/Qwen2.5-Coder-14B-Instruct` — stored at `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct`, mounted into the container as `/models/Qwen2.5-Coder-14B-Instruct`
+**Model:** `Qwen/Qwen2.5-Coder-14B-Instruct` — stored at the absolute host path `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct`, mounted into the container as `/models/Qwen2.5-Coder-14B-Instruct`
 
 **Hardware:** 2× Atlas 300I Duo cards installed; only one is active (`/dev/davinci0`, `/dev/davinci1`). Second card fails to initialize (firmware issue).
 
@@ -105,9 +103,9 @@ conn.close()
 
 The vLLM API is OpenAI-compatible and reachable from any machine on the LAN. `ufw` is inactive on this host — no firewall rules needed.
 
-| Profile | LAN endpoint |
-|---------|-------------|
-| `qwen25coder` | `http://<HOST_IP>:8002/v1` |
+| Endpoint | URL |
+|---------|-----|
+| LAN | `http://<HOST_IP>:8002/v1` |
 
 No API key required. See `guia-api.md` for a full usage guide (Spanish) with curl, Python, and JavaScript examples.
 
@@ -119,40 +117,17 @@ No API key required. See `guia-api.md` for a full usage guide (Spanish) with cur
 
 ## Performance Baseline
 
-Measured 2026-04-07 on stable image (`main-310p-openeuler` @ 2026-03-19):
+Measured 2026-04-21 on stable image (`main-310p-openeuler-stable`) via the OpenAI-compatible API:
 
 | Metric | Value |
 |--------|-------|
 | Model | Qwen2.5-Coder-14B-Instruct |
-| Prompt tokens | 58 |
-| Completion tokens | 512 |
-| Total time | 47s |
-| **Throughput** | **~10.9 tok/s** |
+| Prompt tokens | 47 |
+| Completion tokens | 311 |
+| Total time | 28.394s |
+| **Throughput** | **10.95 tok/s** |
 
 Single-request, eager mode, no graph compilation.
-
-## Alternative Inference Frameworks (Evaluated 2026-04-07)
-
-Evaluated for Ascend 310P (Atlas 300I Duo). Decision: **stay on vLLM-Ascend**.
-
-| Framework | 310P Support | OpenAI API | Docker | Verdict |
-|-----------|-------------|------------|--------|---------|
-| **vLLM-Ascend** | Yes (experimental) | Yes | Pre-built | ✅ Current stack — best option |
-| **llama.cpp CANN** | Yes (FP16/F32 only) | Yes | Must build | ❌ No pre-built image; FP16 GGUF ~28GB tight fit; no Ascend-specific kernels; unproven at 14B on 310P |
-| **SGLang** | 910-series only | Yes | Pre-built | ❌ Not for 310P |
-| **MindIE** | Unclear | Yes | Gated | ❌ Poor docs, requires Huawei account |
-| **Xinference** | Via vLLM/llama.cpp only | Yes | Pre-built | ❌ Orchestration layer only, no added value |
-| **Ollama** | No | — | — | ❌ No Ascend backend |
-
-### llama.cpp CANN — detailed notes
-
-- CANN version in vllm container: **8.5.1**
-- Build base image needed: `ascendai/cann:8.5.1-310p-openeuler22.03-py3.10`
-- No pre-built Docker image — must build from source (~30 min)
-- Model must be converted to FP16 GGUF (~28GB for 14B); Q4/Q8 matmul falls back to CPU on 310P
-- Context >8192 tokens pushes HBM limits with FP16
-- Estimated throughput: 5–12 tok/s (no public 310P benchmark at 14B)
-- Conclusion: more setup work for likely worse performance
 
 ## Known Issues / Image History
 
@@ -160,7 +135,6 @@ Evaluated for Ascend 310P (Atlas 300I Duo). Decision: **stay on vLLM-Ascend**.
 |---|---|---|
 | `main-310p-openeuler` @ 2026-03-19 (ID: `7d210d233141`) | ✅ Working | Last confirmed stable image |
 | `main-310p-openeuler` @ 2026-04-07 (digest: `354db061...`) | ❌ Broken | Two regressions: (1) `--swap-space` argument removed with no warning; (2) Triton compiler crashes on first inference with `MLIRCompilationError: Cannot find option named 'Ascend310P3'` in `penalties.py` — affects all requests. Roll back to `7d210d233141` if this image is pulled. |
-| `Qwen3-14B` model | ❌ Incompatible | Garbled/repeated words in output on the stable image. Final answers are correct but `<think>` stream is corrupted. Root cause: stable image (2026-03-19) predates Qwen3's architecture changes. Requires a newer vllm-ascend image that itself has Triton regressions — blocked until upstream fix. |
 
 ### Rolling back to a previous image
 

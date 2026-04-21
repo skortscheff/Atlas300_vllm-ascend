@@ -154,7 +154,7 @@ console.log(respuesta.choices[0].message.content);
 
 | Síntoma | Causa probable | Solución |
 |---------|----------------|----------|
-| `Connection refused` | El modelo no está iniciado | Ejecutar `docker compose --profile qwen25coder up -d` en el servidor |
+| `Connection refused` | El modelo no está iniciado | Ejecutar `docker compose up -d` en el servidor |
 | `Connection timed out` | Puerto bloqueado o IP incorrecta | Verificar IP con `hostname -I` en el servidor |
 | Respuesta muy lenta al inicio | El modelo aún está cargando | Esperar hasta ver `Application startup complete.` en los logs |
 | Error `model not found` | El `model` no coincide con el cargado | Consultar `/v1/models` para obtener el ID exacto |

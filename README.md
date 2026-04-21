@@ -10,19 +10,19 @@ PLease don't mind the AI generated slop of documentation here :P it actually wor
 
 | Service | Image | Port |
 |---------|-------|------|
-| [vLLM](https://github.com/vllm-project/vllm) (Ascend fork) | `quay.io/ascend/vllm-ascend:main-310p-openeuler` | 8002 |
+| [vLLM](https://github.com/vllm-project/vllm) (Ascend fork) | `quay.io/ascend/vllm-ascend:main-310p-openeuler-stable` | 8002 |
 | [Open WebUI](https://github.com/open-webui/open-webui) | `ghcr.io/open-webui/open-webui:latest` | 3000 |
 
 ## Model
 
-| Profile | Model | Port |
-|---------|-------|------|
-| `qwen25coder` | `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 |
+| Model | Port |
+|-------|------|
+| `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 |
 
 ## Quickstart
 
 ```bash
-docker compose --profile qwen25coder up -d
+docker compose up -d
 
 # Follow logs — wait for "Application startup complete."
 docker compose logs -f vllm-qwen25coder
@@ -35,10 +35,12 @@ docker compose logs -f vllm-qwen25coder
 
 | Path | Purpose |
 |------|---------|
-| `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct` | Active model (28 GB, served directly) |
+| `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct` | Active model (28 GB, bind-mounted directly into the container) |
 | `vllm-atlas_vllm-cache` (Docker volume) | vLLM compilation cache |
 
-The entire `${MODELS_DIR}` directory is bind-mounted into the container as `/models`.
+The compose file uses the absolute host path `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct`
+and mounts it into the container as `/models/Qwen2.5-Coder-14B-Instruct`, so moving this
+repository does not break model loading.
 
 ## Hardware
 
@@ -85,11 +87,15 @@ Both services share the `llmnet` Docker bridge network. The vLLM API is OpenAI-c
 
 The vLLM API is OpenAI-compatible and accessible from any machine on the LAN.
 
-| Profile | LAN endpoint |
-|---------|-------------|
-| `qwen25coder` | `http://<HOST_IP>:8002/v1` |
+| Endpoint | URL |
+|---------|-----|
+| LAN | `http://<HOST_IP>:8002/v1` |
 
 No API key required. Pass any non-empty string if the client requires one (e.g. `sk-no-key-required`).
+
+Validated on 2026-04-21:
+- `GET /v1/models` returned `Qwen2.5-Coder-14B-Instruct`
+- `POST /v1/chat/completions` completed successfully at 10.95 tok/s on a 311-token generation benchmark
 
 ### Test with curl
 
@@ -133,9 +139,20 @@ print(response.choices[0].message.content)
 | `--max-model-len` | `32768` | Max context window (input + output) |
 | `--gpu-memory-utilization` | `0.95` | Uses 95% of NPU memory for KV cache |
 | `--max-num-seqs` | `32` | Max concurrent sequences |
-| `--swap-space` | `8` | CPU swap space (GB) for KV cache overflow |
 | `--enforce-eager` | — | Required for Ascend 310P compatibility |
 | `--compilation-config` | `{"mode":0}` | Disables graph compilation (Ascend) |
+
+## Performance Baseline
+
+Measured 2026-04-21 against `http://127.0.0.1:8002/v1/chat/completions`:
+
+| Metric | Value |
+|--------|-------|
+| Prompt tokens | 47 |
+| Completion tokens | 311 |
+| Total tokens | 358 |
+| Total time | 28.394 s |
+| Throughput | 10.95 tok/s |
 
 ## Open WebUI
 
@@ -159,15 +176,14 @@ conn.close()
 
 ```bash
 # Start
-docker compose --profile qwen25coder up -d
+docker compose up -d
 
 # View logs
 docker compose logs -f vllm-qwen25coder
 docker compose logs -f openwebui
 
 # Stop everything
-docker compose --profile qwen25coder down
-docker compose down   # stops openwebui
+docker compose down
 
 # Check NPU status
 npu-smi info
