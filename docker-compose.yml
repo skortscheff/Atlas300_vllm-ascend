@@ -34,7 +34,7 @@ services:
       - serve
       - /models/Qwen2.5-Coder-14B-Instruct-abliterated
       - --served-model-name
-      - Qwen2.5-Coder-14B-Instruct
+      - Qwen2.5-Coder-14B-Instruct-abliterated
       - --dtype
       - float16
       - --tensor-parallel-size
