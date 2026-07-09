@@ -14,7 +14,7 @@ One model is active:
 
 | Model | Port | Status |
 |-------|------|--------|
-| `Qwen/Qwen2.5-Coder-14B-Instruct` | 8002 | ✅ Active |
+| `huihui-ai/Qwen2.5-Coder-14B-Instruct-abliterated` (served as `Qwen2.5-Coder-14B-Instruct`) | 8002 | ✅ Active |
 
 ### Starting
 
@@ -58,7 +58,7 @@ User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) �
 
 **Network:** Both services share the `llmnet` bridge network.
 
-**Model:** `Qwen/Qwen2.5-Coder-14B-Instruct` — stored at the absolute host path `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct`, mounted into the container as `/models/Qwen2.5-Coder-14B-Instruct`
+**Model:** `huihui-ai/Qwen2.5-Coder-14B-Instruct-abliterated` (2026-07-09, replaced the original `Qwen/Qwen2.5-Coder-14B-Instruct` — same architecture, `config.json` confirms identical `Qwen2ForCausalLM`, 48 layers, hidden_size 5120; only difference is refusal-removed weights) — stored at the absolute host path `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct-abliterated`, mounted into the container as `/models/Qwen2.5-Coder-14B-Instruct-abliterated`. Served under the same `--served-model-name Qwen2.5-Coder-14B-Instruct` so Open WebUI's existing DB entry needs no changes. The original non-abliterated weights are still on disk at `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct` if a rollback is needed.
 
 **Hardware (as of 2026-07-08):** 1× Atlas 300I Duo card installed (`/dev/davinci0`, `/dev/davinci1` — 2 chips on the one card, bus `0000:86:00.0`, both `OK` per `npu-smi`). The second, defective card (`0000:3b:00.0`) has been **physically removed** from the host — it had a confirmed hardware defect (firmware never boots, `flag_r=0x0`, `ret=-19/ENODEV`) that was never resolved via RMA. `--tensor-parallel-size 2` still applies since the remaining card itself has 2 chips. See `huawei-support-case.md` and `recover-card.sh` for the historical defect investigation (kept for reference, no longer actionable).
 

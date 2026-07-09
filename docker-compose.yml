@@ -20,7 +20,7 @@ x-vllm-common: &a1
     - /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64:ro
     - /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info:ro
     - /etc/ascend_install.info:/etc/ascend_install.info:ro
-    - ${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct:/models/Qwen2.5-Coder-14B-Instruct:ro
+    - ${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct-abliterated:/models/Qwen2.5-Coder-14B-Instruct-abliterated:ro
     - vllm-cache:/root/.cache/vllm
 services:
   vllm-qwen25coder:
@@ -32,7 +32,7 @@ services:
     command:
       - vllm
       - serve
-      - /models/Qwen2.5-Coder-14B-Instruct
+      - /models/Qwen2.5-Coder-14B-Instruct-abliterated
       - --served-model-name
       - Qwen2.5-Coder-14B-Instruct
       - --dtype
