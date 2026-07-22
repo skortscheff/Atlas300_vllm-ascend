@@ -4,17 +4,23 @@ Este servidor expone una API compatible con OpenAI en la red local. Cualquier he
 
 ## Endpoint
 
-| Modelo | URL base |
+| Modelo activo | URL base |
 |--------|----------|
-| `Qwen2.5-Coder-14B-Instruct-abliterated` | `http://<HOST_IP>:8002/v1` |
+| `qwen3.6-moe` (Huihui-Qwen3.6-35B-A3B-abliterated, MoE) | `http://<HOST_IP>:8002/v1` |
+
+> **Nota:** el stack soporta dos modelos intercambiables mediante *Compose profiles* (`prod` y `qwen36`) — ambos comparten el mismo puerto 8002, así que solo uno está activo a la vez. Este documento describe el modelo **actualmente activo** (`qwen36`, desde 2026-07-22). El otro modelo disponible es `Qwen2.5-Coder-14B-Instruct-abliterated` (perfil `prod`) — mismo endpoint, mismo formato de API, pero más lento (~9.6 tok/s), sin tool-calling funcional, y sin razonamiento (`reasoning_content`). Ver `CLAUDE.md`, sección "Switching Models", para cambiar entre ambos.
 
 **API key:** No se requiere autenticación. Si tu cliente lo exige, usa cualquier cadena de texto, por ejemplo `sk-local`.
 
-**Ventana de contexto:** 32 768 tokens (entrada + salida combinados) — es el límite nativo del modelo (`max_position_embeddings`), no se puede ampliar sin degradar la calidad (YaRN rope-scaling) y además chocaría con el límite de memoria de la 310P (ver `CLAUDE.md`).
+**Ventana de contexto:** **16384 tokens** (entrada + salida combinados) — menor que el modelo anterior (32768), por limitación de memoria de la 310P con este modelo MoE de 35B parámetros en bf16, pero con margen suficiente confirmado (KV cache pool de ~120K tokens, ~7.3x de concurrencia a este límite) (ver `CLAUDE.md`).
 
-**Velocidad:** ~9.6 tok/s en una sola conversación (limitado por ancho de banda de memoria en este hardware, no por cómputo). Con varias peticiones concurrentes el rendimiento agregado escala bien (~44 tok/s con 8 peticiones simultáneas) — para un solo usuario no hay ganancia posible con la configuración actual.
+**Velocidad:** ~28.6 tok/s en una sola conversación — unas **3x más rápido** que el modelo anterior (Qwen2.5-Coder-14B, ~9.6 tok/s), gracias a la arquitectura MoE (35B totales, ~3B activos por token) y al modo ACLGraph (no-eager) de `v0.23.0rc1-310p-openeuler`.
 
-**Tool-calling / function calling:** el servidor está configurado con `--enable-auto-tool-choice --tool-call-parser hermes`, pero **actualmente no funciona correctamente** — el modelo emite el texto de la llamada a función como texto plano (`<tools>{...}</tools>`) dentro de `message.content` en vez de rellenar el campo estructurado `tool_calls`. Si tu integración depende de `tool_calls`, no confíes en él todavía (ver `CLAUDE.md`, sección de baseline de rendimiento).
+**Razonamiento (chain-of-thought):** este modelo "piensa" antes de responder — el contenido de razonamiento llega en el campo **`message.reasoning_content`** (no en `content`), gracias a `--reasoning-parser qwen3`. Es normal ver respuestas con `reasoning_content` largo (600-1600+ tokens) antes de la respuesta final en `content`. **Usa siempre `max_tokens >= 2000-3000`** — con límites bajos (ej. 512) la respuesta puede cortarse a mitad del razonamiento sin llegar a producir contenido útil.
+
+**Estabilidad del razonamiento:** el servidor tiene fijados por defecto `temperature: 0.2` y `repetition_penalty: 1.1` (vía `--override-generation-config`) para evitar un bug conocido en el que el modelo podía quedarse divagando indefinidamente en el razonamiento sin nunca concluir. Estos valores ya se aplican automáticamente — no hace falta pasarlos en cada petición, pero puedes sobreescribirlos si tu cliente los especifica explícitamente.
+
+**Tool-calling / function calling:** el servidor está configurado con `--enable-auto-tool-choice --tool-call-parser qwen3_coder` y **esto sí funciona correctamente** (a diferencia del modelo anterior) — las llamadas a función llegan correctamente estructuradas en `message.tool_calls`, confirmado con pruebas reales.
 
 ---
 
@@ -31,7 +37,7 @@ Respuesta esperada:
   "object": "list",
   "data": [
     {
-      "id": "Qwen2.5-Coder-14B-Instruct-abliterated",
+      "id": "qwen3.6-moe",
       "object": "model"
     }
   ]
@@ -46,22 +52,24 @@ Respuesta esperada:
 curl http://<HOST_IP>:8002/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen2.5-Coder-14B-Instruct-abliterated",
+    "model": "qwen3.6-moe",
     "messages": [
       {"role": "user", "content": "Explica qué es una API REST en dos párrafos."}
     ],
-    "max_tokens": 300
+    "max_tokens": 3000
   }'
 ```
+
+La respuesta incluirá `message.reasoning_content` (el razonamiento interno del modelo) además de `message.content` (la respuesta final). Si usas un cliente que no distingue ambos campos, revisa que esté leyendo `content`, no `reasoning_content`.
 
 ### Parámetros útiles
 
 | Parámetro | Descripción | Valor típico |
 |-----------|-------------|--------------|
-| `model` | ID del modelo | `Qwen2.5-Coder-14B-Instruct-abliterated` |
+| `model` | ID del modelo | `qwen3.6-moe` |
 | `messages` | Lista de mensajes del hilo de conversación | obligatorio |
-| `max_tokens` | Límite de tokens en la respuesta | `512` |
-| `temperature` | Creatividad (0 = determinista, 1 = creativo) | `0.7` |
+| `max_tokens` | Límite de tokens en la respuesta — **usar 2000-3000 mínimo**, este modelo razona extensamente antes de responder | `3000` |
+| `temperature` | Creatividad (0 = determinista, 1 = creativo) — ya fijado en `0.2` por defecto en el servidor | `0.2` (por defecto) |
 | `stream` | Devuelve la respuesta en tiempo real (streaming) | `true` / `false` |
 
 ---
@@ -85,16 +93,17 @@ client = OpenAI(
 )
 
 respuesta = client.chat.completions.create(
-    model="Qwen2.5-Coder-14B-Instruct-abliterated",
+    model="qwen3.6-moe",
     messages=[
         {"role": "system", "content": "Eres un asistente de programación experto."},
         {"role": "user", "content": "Escribe una función en Python que invierta una cadena de texto."},
     ],
-    max_tokens=512,
-    temperature=0.2,
+    max_tokens=3000,
 )
 
 print(respuesta.choices[0].message.content)
+# El razonamiento interno (si lo necesitas) está en:
+# respuesta.choices[0].message.reasoning_content
 ```
 
 ### Ejemplo con streaming
@@ -108,9 +117,9 @@ client = OpenAI(
 )
 
 stream = client.chat.completions.create(
-    model="Qwen2.5-Coder-14B-Instruct-abliterated",
+    model="qwen3.6-moe",
     messages=[{"role": "user", "content": "¿Cuál es la diferencia entre una lista y una tupla en Python?"}],
-    max_tokens=512,
+    max_tokens=3000,
     stream=True,
 )
 
@@ -142,11 +151,11 @@ const client = new OpenAI({
 });
 
 const respuesta = await client.chat.completions.create({
-  model: "Qwen2.5-Coder-14B-Instruct-abliterated",
+  model: "qwen3.6-moe",
   messages: [
     { role: "user", content: "¿Cómo funciona el event loop en JavaScript?" },
   ],
-  max_tokens: 512,
+  max_tokens: 3000,
 });
 
 console.log(respuesta.choices[0].message.content);
@@ -158,7 +167,8 @@ console.log(respuesta.choices[0].message.content);
 
 | Síntoma | Causa probable | Solución |
 |---------|----------------|----------|
-| `Connection refused` | El modelo no está iniciado | Ejecutar `docker compose up -d` en el servidor |
+| `Connection refused` | El modelo no está iniciado | Ejecutar `docker compose --profile qwen36 up -d` en el servidor (o `--profile prod` para el modelo anterior) |
 | `Connection timed out` | Puerto bloqueado o IP incorrecta | Verificar IP con `hostname -I` en el servidor |
 | Respuesta muy lenta al inicio | El modelo aún está cargando | Esperar hasta ver `Application startup complete.` en los logs |
-| Error `model not found` | El `model` no coincide con el cargado | Consultar `/v1/models` para obtener el ID exacto |
+| Error `model not found` | El `model` no coincide con el cargado | Consultar `/v1/models` para obtener el ID exacto (puede ser `qwen3.6-moe` o `Qwen2.5-Coder-14B-Instruct-abliterated` según el perfil activo) |
+| Respuesta vacía con `finish_reason: length` | `max_tokens` demasiado bajo — el razonamiento se cortó antes de producir respuesta | Subir `max_tokens` a 3000-4000 |

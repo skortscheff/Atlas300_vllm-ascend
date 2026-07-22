@@ -85,7 +85,7 @@ services:
         /usr/local/python3.12.13/lib/python3.12/site-packages/triton.disabled &&
         exec vllm serve /models/Huihui-Qwen3.6-35B-A3B-abliterated
         --served-model-name qwen3.6-moe --trust-remote-code --tensor-parallel-size 2
-        --dtype float16 --max-model-len 4096 --max-num-seqs 16
+        --dtype float16 --max-model-len 16384 --max-num-seqs 16
         --gpu-memory-utilization 0.95
         --additional-config '{"ascend_compilation_config": {"fuse_norm_quant": false}}'
         --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY", "cudagraph_capture_sizes": [1,4]}'
