@@ -1,9 +1,10 @@
 x-vllm-common: &a1
-  image: quay.io/ascend/vllm-ascend:main-310p-openeuler-stable
   restart: unless-stopped
   ipc: host
   networks:
-    - llmnet
+    llmnet:
+      aliases:
+        - vllm-backend
   environment:
     ASCEND_VISIBLE_DEVICES: 0,1
     OMP_NUM_THREADS: "8"
@@ -14,21 +15,23 @@ x-vllm-common: &a1
     - /dev/davinci_manager
     - /dev/devmm_svm
     - /dev/hisi_hdc
-  volumes:
-    - /usr/local/dcmi:/usr/local/dcmi:ro
-    - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
-    - /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64:ro
-    - /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info:ro
-    - /etc/ascend_install.info:/etc/ascend_install.info:ro
-    - ${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct-abliterated:/models/Qwen2.5-Coder-14B-Instruct-abliterated:ro
-    - vllm-cache:/root/.cache/vllm
+  ports:
+    - 8002:8000
 services:
   vllm-qwen25coder:
     <<: *a1
+    image: quay.io/ascend/vllm-ascend:main-310p-openeuler-stable
     container_name: vllm-qwen25coder
-    restart: unless-stopped
-    ports:
-      - 8002:8000
+    profiles:
+      - prod
+    volumes:
+      - /usr/local/dcmi:/usr/local/dcmi:ro
+      - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
+      - /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64:ro
+      - /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info:ro
+      - /etc/ascend_install.info:/etc/ascend_install.info:ro
+      - vllm-cache:/root/.cache/vllm
+      - ${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct-abliterated:/models/Qwen2.5-Coder-14B-Instruct-abliterated:ro
     command:
       - vllm
       - serve
@@ -56,6 +59,40 @@ services:
       - "0.95"
       - --enable-prefix-caching
       - --enable-chunked-prefill
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - hermes
+  vllm-qwen36moe:
+    <<: *a1
+    image: quay.io/ascend/vllm-ascend:v0.23.0rc1-310p-openeuler
+    container_name: vllm-qwen36moe
+    profiles:
+      - qwen36
+    entrypoint:
+      - /bin/bash
+      - -c
+    volumes:
+      - /usr/local/dcmi:/usr/local/dcmi:ro
+      - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
+      - /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64:ro
+      - /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info:ro
+      - /etc/ascend_install.info:/etc/ascend_install.info:ro
+      - vllm-cache:/root/.cache/vllm
+      - ${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated:/models/Huihui-Qwen3.6-35B-A3B-abliterated:ro
+    command:
+      - >-
+        mv /usr/local/python3.12.13/lib/python3.12/site-packages/triton
+        /usr/local/python3.12.13/lib/python3.12/site-packages/triton.disabled &&
+        exec vllm serve /models/Huihui-Qwen3.6-35B-A3B-abliterated
+        --served-model-name qwen3.6-moe --trust-remote-code --tensor-parallel-size 2
+        --dtype float16 --max-model-len 4096 --max-num-seqs 16
+        --gpu-memory-utilization 0.95
+        --additional-config '{"ascend_compilation_config": {"fuse_norm_quant": false}}'
+        --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY", "cudagraph_capture_sizes": [1,4]}'
+        --mamba-ssm-cache-dtype float16 --reasoning-parser qwen3
+        --enable-auto-tool-choice --tool-call-parser qwen3_coder
+        --override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'
+        --host 0.0.0.0 --port 8000
   openwebui:
     image: ghcr.io/open-webui/open-webui:latest
     container_name: openwebui
@@ -67,7 +104,7 @@ services:
     volumes:
       - ./openwebui-data:/app/backend/data
     environment:
-      OPENAI_API_BASE_URLS: http://vllm-qwen25coder:8000/v1
+      OPENAI_API_BASE_URLS: http://vllm-backend:8000/v1
       OPENAI_API_KEYS: sk-no-key-required
 networks:
   llmnet: {}

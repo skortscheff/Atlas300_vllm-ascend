@@ -6,11 +6,15 @@ Este servidor expone una API compatible con OpenAI en la red local. Cualquier he
 
 | Modelo | URL base |
 |--------|----------|
-| `Qwen/Qwen2.5-Coder-14B-Instruct` | `http://<HOST_IP>:8002/v1` |
+| `Qwen2.5-Coder-14B-Instruct-abliterated` | `http://<HOST_IP>:8002/v1` |
 
 **API key:** No se requiere autenticación. Si tu cliente lo exige, usa cualquier cadena de texto, por ejemplo `sk-local`.
 
-**Ventana de contexto:** 32 768 tokens (entrada + salida combinados).
+**Ventana de contexto:** 32 768 tokens (entrada + salida combinados) — es el límite nativo del modelo (`max_position_embeddings`), no se puede ampliar sin degradar la calidad (YaRN rope-scaling) y además chocaría con el límite de memoria de la 310P (ver `CLAUDE.md`).
+
+**Velocidad:** ~9.6 tok/s en una sola conversación (limitado por ancho de banda de memoria en este hardware, no por cómputo). Con varias peticiones concurrentes el rendimiento agregado escala bien (~44 tok/s con 8 peticiones simultáneas) — para un solo usuario no hay ganancia posible con la configuración actual.
+
+**Tool-calling / function calling:** el servidor está configurado con `--enable-auto-tool-choice --tool-call-parser hermes`, pero **actualmente no funciona correctamente** — el modelo emite el texto de la llamada a función como texto plano (`<tools>{...}</tools>`) dentro de `message.content` en vez de rellenar el campo estructurado `tool_calls`. Si tu integración depende de `tool_calls`, no confíes en él todavía (ver `CLAUDE.md`, sección de baseline de rendimiento).
 
 ---
 
@@ -27,7 +31,7 @@ Respuesta esperada:
   "object": "list",
   "data": [
     {
-      "id": "Qwen/Qwen2.5-Coder-14B-Instruct",
+      "id": "Qwen2.5-Coder-14B-Instruct-abliterated",
       "object": "model"
     }
   ]
@@ -42,7 +46,7 @@ Respuesta esperada:
 curl http://<HOST_IP>:8002/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen/Qwen2.5-Coder-14B-Instruct",
+    "model": "Qwen2.5-Coder-14B-Instruct-abliterated",
     "messages": [
       {"role": "user", "content": "Explica qué es una API REST en dos párrafos."}
     ],
@@ -54,7 +58,7 @@ curl http://<HOST_IP>:8002/v1/chat/completions \
 
 | Parámetro | Descripción | Valor típico |
 |-----------|-------------|--------------|
-| `model` | ID del modelo | `Qwen/Qwen2.5-Coder-14B-Instruct` |
+| `model` | ID del modelo | `Qwen2.5-Coder-14B-Instruct-abliterated` |
 | `messages` | Lista de mensajes del hilo de conversación | obligatorio |
 | `max_tokens` | Límite de tokens en la respuesta | `512` |
 | `temperature` | Creatividad (0 = determinista, 1 = creativo) | `0.7` |
@@ -81,7 +85,7 @@ client = OpenAI(
 )
 
 respuesta = client.chat.completions.create(
-    model="Qwen/Qwen2.5-Coder-14B-Instruct",
+    model="Qwen2.5-Coder-14B-Instruct-abliterated",
     messages=[
         {"role": "system", "content": "Eres un asistente de programación experto."},
         {"role": "user", "content": "Escribe una función en Python que invierta una cadena de texto."},
@@ -104,7 +108,7 @@ client = OpenAI(
 )
 
 stream = client.chat.completions.create(
-    model="Qwen/Qwen2.5-Coder-14B-Instruct",
+    model="Qwen2.5-Coder-14B-Instruct-abliterated",
     messages=[{"role": "user", "content": "¿Cuál es la diferencia entre una lista y una tupla en Python?"}],
     max_tokens=512,
     stream=True,
@@ -138,7 +142,7 @@ const client = new OpenAI({
 });
 
 const respuesta = await client.chat.completions.create({
-  model: "Qwen/Qwen2.5-Coder-14B-Instruct",
+  model: "Qwen2.5-Coder-14B-Instruct-abliterated",
   messages: [
     { role: "user", content: "¿Cómo funciona el event loop en JavaScript?" },
   ],
