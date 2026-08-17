@@ -10,61 +10,46 @@ A Docker Compose deployment for LLM inference on Ascend NPU hardware. Two servic
 
 ## ⚠️ Production Setup — always revertible to this state
 
-This is the canonical known-good state (confirmed working 2026-07-21). Any experimental image/model test (new vllm-ascend tags, alternative inference engines, new models like Qwen3.5) must be done **standalone on a different port** (e.g. 8003), never by editing `docker-compose.yml` in place, and production must be restored to exactly this state afterward — every experiment log in this file follows that method (stop production → test on 8003 → stop test container → `docker compose up -d` again).
+**Updated 2026-08-12: the `qwen36` profile (Qwen3.6 MoE) is now the production baseline** — promoted from "alternative" to default by user decision. This is the canonical known-good state to always return to. Any experimental image/model test (new vllm-ascend tags, alternative inference engines, other models) must be done **standalone on a different port** (e.g. 8003), never by editing `docker-compose.yml` in place, and production must be restored to exactly this state afterward — every experiment log in this file follows that method (stop production → test on 8003 → stop test container → bring production back up again).
 
 | Component | Pinned value |
 |---|---|
-| vLLM image | `quay.io/ascend/vllm-ascend:main-310p-openeuler-stable` — image ID `7d210d233141`, digest `sha256:bf376adb8b4238ca7f0aaa99023581a572ea77ffb611b4489f631d59abfe4e46` |
-| Model | `Qwen2.5-Coder-14B-Instruct-abliterated` at `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct-abliterated` |
-| vLLM command | exactly as in the current `docker-compose.yml` `vllm-qwen25coder` service (`--dtype float16 --tensor-parallel-size 2 --enforce-eager --compilation-config '{"mode":0}' --max-model-len 32768 ... --enable-auto-tool-choice --tool-call-parser hermes`) |
+| vLLM image | `quay.io/ascend/vllm-ascend:v0.23.0-310p-openeuler` (repinned 2026-08-17 from `v0.23.0rc1-310p-openeuler` — the numbered stable release, not the rc), with the triton-stub-removal workaround baked into the Compose entrypoint (`mv .../site-packages/triton .../site-packages/triton.disabled` before `vllm serve`) |
+| Model | `Huihui-Qwen3.6-35B-A3B-abliterated` (MoE) at `${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated`, served as `qwen3.6-moe` |
+| vLLM command | exactly as in the current `docker-compose.yml` `vllm-qwen36moe` service — `--dtype float16 --tensor-parallel-size 2 --max-model-len 16384 --max-num-seqs 16 --gpu-memory-utilization 0.95`, `--reasoning-parser qwen3`, `--enable-auto-tool-choice --tool-call-parser qwen3_coder`, `--mamba-ssm-cache-dtype float16`, ACLGraph compilation config (`FULL_DECODE_ONLY`, capture sizes `[1,4]`), `--override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'` (reasoning-stability fix, baked in server-side) |
 | Ports | vLLM 8002, Open WebUI 3000 |
 | Driver/firmware | 25.3.rc1 / 7.8.0.2.212 (see Deployment Notes) |
+| Context | 16384 (halved vs. the old dense-14B baseline's 32768 — hard 310P memory ceiling for this model, see "Qwen3.6 MoE context window raised" section below) |
 
-**Note:** `docker-compose.yml` currently has uncommitted local changes (adds `--enable-auto-tool-choice --tool-call-parser hermes` to the vLLM command) — this uncommitted working-tree state *is* the production config, not the last commit. Don't assume `git stash`/`git checkout -- docker-compose.yml` gets you back to production; it would actually break it.
+**The previous baseline, `Qwen2.5-Coder-14B-Instruct-abliterated` on `main-310p-openeuler-stable`, is still available as the `prod` profile** — dense, fp16, 32768 context, ~9.53 tok/s, tool-calling not populated (known issue). Use it if the MoE model's halved context or reasoning-verbosity trade-offs become a problem for a given task.
 
 **To revert to this state from any experiment:**
 ```bash
-docker compose --profile qwen36 down   # or: docker stop <any-test-container> && docker rm <any-test-container>
-docker compose --profile prod up -d    # brings back vllm-qwen25coder + openwebui exactly as pinned above
+docker compose --profile prod down     # or: docker stop <any-test-container> && docker rm <any-test-container>
+docker compose --profile qwen36 up -d --force-recreate  # brings back vllm-qwen36moe + openwebui exactly as pinned above
 # verify:
-docker inspect vllm-qwen25coder --format '{{.Config.Image}}'   # must print main-310p-openeuler-stable
-curl -s http://localhost:8002/v1/models                        # must show Qwen2.5-Coder-14B-Instruct-abliterated
+docker inspect vllm-qwen36moe --format '{{.Config.Image}}'   # must print v0.23.0rc1-310p-openeuler
+docker exec vllm-qwen36moe python3 -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://localhost:8000/v1/models'))['data'][0]['id'])"  # must show qwen3.6-moe
 ```
+**Use `--force-recreate` when bringing `vllm-qwen36moe` back up** — its entrypoint does a one-time `mv .../triton .../triton.disabled` that isn't idempotent; reusing a stopped container's filesystem layer (rather than a fresh one) makes that `mv` fail and the container crash-loop. `--force-recreate` (or fully removing the container first) avoids this.
 
-**Note (2026-07-22):** `docker-compose.yml` now uses **Compose profiles** (`prod` vs `qwen36`) to let the two vLLM services share port 8002 and NPU devices without both trying to run at once — see "Switching Models" below. Plain `docker compose up -d` with no `--profile` flag starts **only** `openwebui`; a vLLM profile must always be specified explicitly.
-If `main-310p-openeuler-stable` tag is ever missing/retagged, restore it explicitly:
-```bash
-docker tag 7d210d233141 quay.io/ascend/vllm-ascend:main-310p-openeuler-stable
-```
+**Note (2026-07-22):** `docker-compose.yml` uses **Compose profiles** (`prod` vs `qwen36`) to let the two vLLM services share port 8002 and NPU devices without both trying to run at once — see "Switching Models" below. Plain `docker compose up -d` with no `--profile` flag starts **only** `openwebui`; a vLLM profile must always be specified explicitly.
 
-## 📍 Resume Here — Next Session (as of 2026-07-21 end of day)
+## 📍 Resume Here — Next Session (as of 2026-08-17)
 
-**Where things stand:** production is untouched and verified healthy (`main-310p-openeuler-stable`, `Qwen2.5-Coder-14B-Instruct-abliterated`, port 8002). Today's session found two genuine breakthroughs on 310P and tested three candidate upgrade models. Nothing has been adopted yet — all of this is downloaded/documented and ready to pick back up.
+**Where things stand:** production is up and verified — `qwen36` profile, `Huihui-Qwen3.6-35B-A3B-abliterated`, port 8002, `max_model_len: 16384`, image **repinned this session** from `v0.23.0rc1-310p-openeuler` to the newly-released stable `v0.23.0-310p-openeuler` (see "v0.23.0 stable released" section below) — zero behavior change, just a strictly-better (immutable, non-rc) pin.
 
-**The two breakthroughs (see "Known Issues" table + dedicated sections below for full detail):**
-1. **General fix for the 310P triton-shadowing bug** that's blocked every public vllm-ascend image since `v0.18.0`: the `triton` package in these images is an empty, broken namespace-stub directory. Fix: `mv .../site-packages/triton .../site-packages/triton.disabled` before `vllm serve` (e.g. via `--entrypoint /bin/bash -c "mv ... && exec vllm serve ..."`). **Not yet re-tested against our production dense Qwen2.5-Coder-14B** — only verified on the Qwen3.5/3.6 MoE and dense test models so far. This is the single highest-value thing to try next: if it works on the dense 14B too, it means we can move off the 4-month-old pinned `main-310p-openeuler-stable` image onto current `v0.23.0rc1` (or newer) for the existing production model, independent of any model swap decision.
-2. **310P does not support bf16 at the hardware op level** — any bf16 checkpoint needs `--dtype float16` to force conversion on load (confirmed via `AclNN_Parameter_Error: DT_BF16 not support`).
+**Big finding this session: the 2026-08-04 "fatal, hard blocker" verdict on `Eco-Tech/Qwen3.6-35B-A3B-w8a8` (AICPU `IndexPut` crash on first inference) no longer reproduces on the new `v0.23.0` stable image.** Retested standalone on port 8003 at `--max-model-len 24576`: full bench suite, multiple varied prompts, and tool-calling all completed with zero crashes across a ~20-minute test window. See "Qwen3.6-35B-A3B-w8a8 retested on v0.23.0 stable" section below for full detail, including upstream GitHub issues (#11188, #13050) confirming this was a known, widely-reported bug, not something specific to our setup.
 
-**Three candidate models downloaded and tested, none adopted:**
-
-| Model | Location | Speed vs. current 9.53 tok/s baseline | Status |
-|---|---|---|---|
-| `Qwen3.5-35B-A3B-w8a8-mtp` (MoE, pre-quantized) | `${MODELS_DIR}/Qwen3.5-35B-A3B-w8a8-mtp` | **29.62 tok/s (+211%)** | ✅ Best candidate — works correctly, tool-calling works (first time ever in this whole investigation), genuinely 10/10 on manual re-benchmark. Context halved to 16384. |
-| `Huihui-Qwen3.6-35B-A3B-abliterated` (MoE, bf16) | `${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated` | 28.62 tok/s (+200%) | ⚠️ Works but hit a real reasoning-non-termination bug (see below). Context forced to 4096 (no pre-quantized version exists, bf16 eats too much memory). |
-| `Huihui-Qwen3.6-27B-abliterated` (dense, bf16) | `${MODELS_DIR}/Huihui-Qwen3.6-27B-abliterated` | **~6.2 tok/s (-35%, regression)** | ⚠️ Same reasoning bug as above. Slower than current production — weaker candidate on speed alone. |
-
-**The Qwen3.6 reasoning bug and its fix (applies to both Qwen3.6 models above):** a simple prompt (`is_prime`) reliably gets the model stuck rambling in low-information filler after it has already internally solved the problem, never transitioning to a final answer — reproduced identically on both the MoE and dense variant, burning the full token budget every time. **Fix confirmed working:** pass `"chat_template_kwargs": {"enable_thinking": false}` in the request body — this skips the reasoning phase entirely via the chat template's built-in toggle. Untested alternative if reasoning should be kept: add `repetition_penalty`/`frequency_penalty` or lower `temperature` (current defaults are loose: `temperature=1.0, top_k=20, top_p=0.95`, no repetition penalty).
-
-**Bench harness caveat that applies to ALL Qwen3.5/3.6 test results above:** `bench/run_bench.py`'s default 512-token budget is far too small for these models' chain-of-thought reasoning (~1300-1400+ tokens typically needed before an answer appears). The `pass_at_1` scores logged in `bench/results.md` for these three models (1/10, 0/10, not yet run) **understate real quality** — manual retests with larger budgets showed Qwen3.5 is genuinely 10/10. **Next session should start by re-running full benchmarks with either a much larger `--max-tokens` or `enable_thinking: false` baked in**, to get real, comparable numbers before any adoption decision.
+**Not yet decided: whether to adopt this w8a8 model as the new `qwen36` profile.** This is a **values decision, not just a technical one** — `Eco-Tech/Qwen3.6-35B-A3B-w8a8` is the **official, non-abliterated** Qwen quantization, unlike the `huihui-ai` abliterated fork currently running in production. Adopting it would trade away refusal-free behavior in exchange for +50% context (24576 vs 16384) and modestly higher single-stream throughput (31.08 vs ~27-28.6 tok/s). Flagged to the user, not yet resolved as of this session's end.
 
 **Concrete next steps, roughly in priority order:**
-1. Re-test the triton-stub-removal fix against the production dense Qwen2.5-Coder-14B on `v0.23.0rc1` — if it works, that's a path to a newer base image for zero model-swap risk.
-2. Re-benchmark `Qwen3.5-35B-A3B-w8a8-mtp` and both Qwen3.6 models with a bench harness that either raises `max_tokens` substantially or sets `enable_thinking: false`, to get honest pass@1/throughput numbers.
-3. Test tool-calling on both Qwen3.6 models (untested this session; same `--tool-call-parser qwen3_coder` combo that worked for Qwen3.5 is the likely candidate).
-4. Decide: is the Qwen3.5 w8a8 MoE model (best result so far — 3x speed, working tools, halved context) worth adopting as the new production model? What would `docker-compose.yml` need to change, and does Open WebUI need any config changes for the new served-model-name?
-5. If adopting anything, remember: any production change must preserve the ability to revert to the pinned "Production Setup" above — update that section's pinned values if the baseline itself changes.
+1. **Get a decision on the w8a8 model swap** (see above) — if abliteration is a hard requirement, either wait for an abliterated fork of this exact w8a8 checkpoint, or try quantizing the currently-running `Huihui-Qwen3.6-35B-A3B-abliterated` weights directly (untested, no recipe yet).
+2. If adopted: update `docker-compose.yml`'s `vllm-qwen36moe` service (`command:` needs `--quantization ascend`, model path change to `/models/Qwen3.6-35B-A3B-w8a8`, `--served-model-name`, `--max-model-len 24576`) and do a longer soak test before trusting it as heavily as the bf16 model — this session's ~20-minute test is not equivalent to weeks of real production traffic, and the root cause of why the `IndexPut` crash stopped reproducing is unconfirmed (plausibly a `torch_npu`/CANN version bump between rc1 and stable, not a known/changelogged fix).
+3. Decide whether to also repin `vllm-qwen25coder` (the `prod` fallback profile, still on `main-310p-openeuler-stable`) — separately, `nightly-releases-v0.25.1rc-310p-openeuler` was found to be a real, zero-downside speed win for that dense model back on 2026-08-04 (+12.7% single-stream, +10.3% concurrent-8) but was never adopted; still an open item, unrelated to the `qwen36` work above.
+4. Decide whether to delete `${MODELS_DIR}/Qwen3.6-35B-A3B-w8a8` (38GB) if the w8a8 swap is declined, or keep it now that it's a live candidate again.
 
-Full narrative and exact commands for every test are in the dedicated sections below (search for "TESTED" or "2026-07-21").
+Full narrative and exact commands for every test are in the dedicated sections below (search for "TESTED" or the date in the section heading).
 
 ## Models
 
@@ -72,24 +57,26 @@ Two models are available as mutually-exclusive Compose **profiles** — only one
 
 | Profile | Service | Model | Status |
 |---|---|---|---|
-| `prod` | `vllm-qwen25coder` | `huihui-ai/Qwen2.5-Coder-14B-Instruct-abliterated` (served as `Qwen2.5-Coder-14B-Instruct-abliterated`) | ✅ Default production — see "Production Setup" above |
-| `qwen36` | `vllm-qwen36moe` | `huihui-ai/Huihui-Qwen3.6-35B-A3B-abliterated` (served as `qwen3.6-moe`) | ✅ Adopted 2026-07-22 as an alternative — ~4.6x faster (28.6 tok/s vs 9.53), reasoning kept on and stabilized via `--override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'` (see dedicated section below); **context raised to 16384** (was initially 4096, bumped same day once KV-cache headroom was confirmed — still half of production's 32768) |
+| `qwen36` | `vllm-qwen36moe` | `huihui-ai/Huihui-Qwen3.6-35B-A3B-abliterated` (served as `qwen3.6-moe`) | ✅ **Default production as of 2026-08-12** — ~4.6x faster (28.6 tok/s vs 9.53), reasoning kept on and stabilized via `--override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'` (see dedicated section below); context 16384 (half of the dense model's 32768) |
+| `prod` | `vllm-qwen25coder` | `huihui-ai/Qwen2.5-Coder-14B-Instruct-abliterated` (served as `Qwen2.5-Coder-14B-Instruct-abliterated`) | ⚠️ Former default (until 2026-08-12), kept as the alternative — dense, fp16, full 32768 context, no tool-calling |
 
 ### Switching Models
 
 Open WebUI always stays up; only the vLLM service changes via `--profile`. Both services publish themselves under the same network alias (`vllm-backend`), so Open WebUI's `OPENAI_API_BASE_URLS` never needs to change.
 
 ```bash
-# Switch to the Qwen3.6 MoE model:
-docker compose --profile prod down
-docker compose --profile qwen36 up -d
-
-# Switch back to production:
+# Switch to the dense Qwen2.5-Coder-14B alternative:
 docker compose --profile qwen36 down
 docker compose --profile prod up -d
 
+# Switch back to production (Qwen3.6 MoE):
+docker compose --profile prod down
+docker compose --profile qwen36 up -d --force-recreate
+
 # Verify which is active:
-curl -s http://localhost:8002/v1/models
+docker exec vllm-qwen36moe python3 -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://localhost:8000/v1/models'))['data'][0]['id'])"
+# or, if vllm-qwen25coder is active:
+docker exec vllm-qwen25coder python3 -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://localhost:8000/v1/models'))['data'][0]['id'])"
 ```
 
 ### Disk cleanup (2026-07-22)
@@ -99,7 +86,7 @@ curl -s http://localhost:8002/v1/models
 ### Starting (default/production)
 
 ```bash
-docker compose --profile prod up -d
+docker compose --profile qwen36 up -d
 ```
 
 ### Open WebUI custom model entries
@@ -109,11 +96,11 @@ None (2026-07-09) — the two legacy custom entries (`Qwen/Qwen2.5-Coder-14B-Ins
 ## Common Commands
 
 ```bash
-# Start production
-docker compose --profile prod up -d
-
-# Start the Qwen3.6 MoE alternative instead
+# Start production (Qwen3.6 MoE)
 docker compose --profile qwen36 up -d
+
+# Start the dense Qwen2.5-Coder-14B alternative instead
+docker compose --profile prod up -d
 
 # Stop everything (add --profile prod or --profile qwen36 to target just the active vLLM service)
 docker compose --profile prod --profile qwen36 down
@@ -492,6 +479,123 @@ Other findings from that research pass, for future reference:
 - Expanding `cudagraph_capture_sizes` from `[1,4]` to include larger batch sizes (e.g. `[1,4,8,16]`, matching `--max-num-seqs 16`) could help *concurrent multi-request* throughput specifically — vLLM's own warning about this is legitimate, unlike the #8240 red herring. But each additional captured graph size costs more workspace memory, the exact resource that OOM'd at 32768. **Not attempted** — user has a single-conversation use case where this wouldn't clearly help, and it wasn't judged worth the risk/testing effort for that reason. If concurrent-user throughput becomes a priority later, test incrementally (add one size at a time, e.g. `[1,4,8]` first) rather than jumping to the full range.
 
 **Note on the "Production Setup" pinned baseline above:** its revert commands were updated to use `--profile prod`/`--profile qwen36` instead of bare `docker compose up -d`/`down`, since profiles are now required — plain `docker compose up -d` with no profile flag only starts `openwebui`.
+
+## Qwen3.6-35B-A3B-w8a8 download in progress — IN PROGRESS, not yet tested (2026-08-03)
+
+Started downloading a pre-quantized w8a8 version of the Qwen3.6-35B-A3B MoE model, following up on the open item from the "Qwen3.6 MoE context window raised" section above: the currently-adopted `qwen36` profile runs bf16 weights and is capped at `--max-model-len 16384` purely by memory pressure (no pre-quantized checkpoint existed for this model at the time). Found `Eco-Tech/Qwen3.6-35B-A3B-w8a8` on ModelScope — same publisher/quantization family as the already-tested and working `Eco-Tech/Qwen3.5-35B-A3B-w8a8-mtp` (see that section above), which ran comfortably at 16384+ context with plenty of headroom to spare on this same hardware.
+
+**Method:** a plain (non-Compose) detached container, not part of `docker-compose.yml`:
+```bash
+docker run -d --name modelscope-dl -v ${MODELS_DIR}:/models python:3.11-slim bash -c '
+pip install --quiet modelscope hf_transfer 2>&1 | tail -5
+python3 -c "
+from modelscope.hub.snapshot_download import snapshot_download
+snapshot_download(\"Eco-Tech/Qwen3.6-35B-A3B-w8a8\", local_dir=\"/models/Qwen3.6-35B-A3B-w8a8\", max_workers=8)
+print(\"DOWNLOAD_COMPLETE\")
+"
+'
+```
+Downloads to `${MODELS_DIR}/Qwen3.6-35B-A3B-w8a8` (25 files, 10 safetensors shards @ ~2-4.3GB each). Both vLLM profiles were already stopped for unrelated reasons when this was started, so the download had the full NPU-idle host to itself — no interaction with the running stack.
+
+**A real operational lesson learned: don't `docker stop`/restart a `snapshot_download` container mid-transfer expecting a clean resume.** The container was manually stopped and recreated (identical command) partway through, intending to force a fresh/faster connection for a slow last shard. Effect: the overall download correctly skipped the 9 already-complete shards (no wasted re-download there), but the one in-flight shard (`quant_model_weights-00010-of-00010.safetensors`, ~46% done at the time) restarted from 0% instead of resuming from its `.incomplete` file — modelscope's downloader does not appear to persist enough state across a hard container restart to resume a partial single-file download, only to skip whole already-validated files. **Lesson: leave a ModelScope snapshot_download alone once started; restarting only helps at the whole-file granularity, and costs whatever partial progress existed on the file that was mid-transfer.**
+
+**Second, more concerning issue found independent of the restart:** after that restart, the same shard 10 **failed hash validation twice in a row** — once on the resumed-then-corrupted partial data (expected, given the above), but then *again* on a subsequent full clean re-download from 0%. Two clean-attempt failures on the same file points at something beyond our own restart — possibly a flaky network/proxy path corrupting this specific file's transfer, or a real integrity issue with this file at the ModelScope source. `modelscope_hub.download` has its own internal retry loop (observed: "Hash validation failed ... retrying (1/3)", "(2/3)") — as of end of session it was partway through attempt 2/3, download left running unattended overnight per user request.
+
+**Next session must check this before assuming the model is ready to test:**
+1. `docker ps --filter name=modelscope-dl` — still running, or exited?
+2. `docker logs modelscope-dl --tail 50` — look for `DOWNLOAD_COMPLETE` (success) vs. a raised/uncaught exception after all 3 retries exhausted (failure).
+3. If it failed a 3rd time: don't just re-run the whole `snapshot_download` call blind — consider fetching that one shard from HuggingFace instead (if a HF mirror of this quantization exists) or from ModelScope with `force_download`/no resume, since the repeat corruption suggests resume-state or a flaky path may be the actual culprit, not one-off bad luck.
+4. Once genuinely complete: verify total size/shard count matches ModelScope's file listing (same verification method used for every other model download in this file), then proceed to the same launch recipe as `Qwen3.5-35B-A3B-w8a8-mtp` above (`--dtype float16 --quantization ascend`, triton-stub-removal workaround, `--mamba-ssm-cache-dtype float16`, `--reasoning-parser qwen3`, ACLGraph compilation config) as a starting point — standalone on port 8003, not touching `docker-compose.yml`, per the standard experiment method in this file.
+5. If it works and gives meaningfully more context headroom than the current bf16 `qwen36` profile's 16384, that's the case for updating the `qwen36` profile in `docker-compose.yml` to point at this quantized checkpoint instead of the bf16 one — remember to keep the `--override-generation-config` sampling-stability fix from the "reasoning-stuck bug" section above, since that fix is specific to Qwen3.6's behavior, not the bf16 checkpoint.
+
+## Qwen3.6-35B-A3B-w8a8 — TESTED, fatal 310P kernel gap found, NOT adopted (2026-08-04)
+
+Followed up on the overnight download above. **Download completed successfully**: `docker logs modelscope-dl` showed `DOWNLOAD_COMPLETE`; shard 10 (the one that failed hash validation twice the night before) passed on its 3rd retry. All 25 files present, 10 safetensors shards, 38GB total. Container removed after confirming.
+
+**Model:** official (non-abliterated) `Eco-Tech/Qwen3.6-35B-A3B-w8a8` from ModelScope — `msmodelslim`-quantized w8a8 of `Qwen/Qwen3.6-35B-A3B`, same `Qwen3_5MoeForConditionalGeneration` architecture family as the already-tested/adopted Huihui abliterated forks. No MTP speculative-decode head this time (unlike the sibling `Qwen3.5-35B-A3B-w8a8-mtp`). Note this quantization was validated by its publisher on an Atlas 800T A3, not 310P — same caveat that applied to the Qwen3.5 w8a8 test, which nonetheless worked fine on our hardware.
+
+**Launch recipe:** same as the `Qwen3.5-35B-A3B-w8a8-mtp` test (`v0.23.0rc1-310p-openeuler`, triton-stub-removal workaround, `--dtype float16 --quantization ascend`, `--mamba-ssm-cache-dtype float16`, `--reasoning-parser qwen3`, `--tool-call-parser qwen3_coder`, `--override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'`), standalone on port 8003.
+
+**Context-ceiling testing (same methodology as every other model in this file — push `--max-model-len` until it breaks):**
+
+| `--max-model-len` | Result |
+|---|---|
+| 32768 | ❌ OOM during ACLGraph decode-graph capture — `NPU out of memory. Tried to allocate 2.00 GiB ... 2.70 GiB free` (narrow miss, same failure class as the bf16 `qwen36` profile hit at this same context size) |
+| 24576 | ✅ KV cache sized correctly (743,716 tokens, 30.26x concurrency), graph capture succeeded (1.18 GiB, 3s), server reached `Application startup complete`, `/v1/models` confirmed `max_model_len: 24576`. Weights: 18.85 GiB/rank (vs. bf16 Qwen3.6-35B-A3B's 33.8 GiB/rank) — quantization is working as intended memory-wise. |
+
+**Then: fatal crash on the first real inference request.** Sent the standard `is_prime` test prompt — the entire vLLM engine died:
+```
+Aicpu kernel execute failed, device_id=0/1, ... kernelName=IndexPut, errorCode=0x2a
+rtStreamSynchronize execution failed, reason=aicpu exception
+synchronize stream failed, runtime result = 507018
+RuntimeError: Worker failed with error 'ACL stream synchronize failed, error code:507018'
+vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue.
+```
+Container exited entirely (`Exited (0)`) — not a request-level error, a full engine crash requiring container restart.
+
+**Isolated the cause: re-tested with `--enforce-eager` (dropping ACLGraph entirely) — same crash, identical `IndexPut` AICPU exception.** This rules out ACLGraph/graph-capture as the cause — it's a genuine missing/broken 310P kernel for the `IndexPut` op itself, triggered on the first real forward pass regardless of execution mode. Root cause not narrowed further (likely candidates: w8a8 dequantization's indexing step, or MoE expert gather/scatter routing — both plausible given `IndexPut`'s typical use, neither confirmed).
+
+**Important distinction from the already-adopted `qwen36` profile:** this crash is on the **w8a8-quantized official checkpoint**, not the bf16 Huihui abliterated model currently running in production as the `qwen36` Compose profile — that model has been working fine in regular use since 2026-07-22. This is a new, hardware-specific kernel gap distinct from (a) the triton-stub bug, (b) bf16-unsupported-at-op-level, and (c) llama.cpp's `Roll` kernel gap — all already documented above. Unknown whether this is specific to this exact quantization tool/checkpoint or a more general "w8a8 quant + Qwen3.6 MoE" incompatibility on 310P — the sibling `Qwen3.5-35B-A3B-w8a8-mtp` model (different base model, same quant family/publisher) did **not** hit this error, so it's not simply "any w8a8 MoE model triggers this."
+
+**Verdict: not viable, hard blocker — a real kernel gap, not a config/flag issue to tune around.** No further recipe variation (eager vs. graph, different context sizes) changes the outcome; the crash is deterministic on first inference. Would need either an upstream `vllm-ascend`/CANN fix for `IndexPut` on 310P, or a different quantization of this specific model that avoids whatever op path triggers it.
+
+**Test method:** production was already stopped from the prior session (left down overnight for the download); tested standalone on port 8003 across three launches (32768 ACLGraph → OOM, 24576 ACLGraph → crash on inference, 24576 eager → same crash), each old container removed before the next launch. After confirming the blocker, removed the final test container and restored production via `docker compose --profile prod up -d`, verified via `docker inspect` + `/v1/models` against the pinned baseline (`main-310p-openeuler-stable`, `Qwen2.5-Coder-14B-Instruct-abliterated`, `max_model_len: 32768`) — no changes made to `docker-compose.yml`.
+
+## Newer vllm-ascend release on the dense production model — TESTED, real upgrade candidate, NOT yet adopted (2026-08-04)
+
+Finally re-tested the triton-stub-removal fix (found 2026-07-21, see Known Issues table) against the actual production dense model, per the long-standing top-priority item in this file. First checked quay.io for the newest available 310P-tagged image via the registry API (`quay.io/api/v1/repository/ascend/vllm-ascend/tag/`) rather than assuming `v0.23.0rc1` (already tested on the MoE models in July) was still current — found `nightly-releases-v0.25.1rc-310p-openeuler` as the newest 310P tag (newer than `nightly-releases-v0.24.0rc-310p-openeuler`; no numbered release past `v0.23.0rc1` exists yet, only mutable `nightly-releases-*` tags for v0.24/v0.25).
+
+**Test 1 — exact production flags, just a newer image + the triton-stub-removal workaround.** Pulled `quay.io/ascend/vllm-ascend:nightly-releases-v0.25.1rc-310p-openeuler`, ran standalone on port 8003 with **identical flags to the current pinned production command** (`--dtype float16 --tensor-parallel-size 2 --enforce-eager --compilation-config '{"mode":0}' --max-model-len 32768 --max-num-batched-tokens 32768 --max-num-seqs 32 --gpu-memory-utilization 0.95 --enable-prefix-caching --enable-chunked-prefill --enable-auto-tool-choice --tool-call-parser hermes`), only difference being the triton-stub-removal `mv` in the entrypoint. **Result: works cleanly, full `bench/run_bench.py` comparison run:**
+
+| Metric | Production baseline (`main-310p-openeuler-stable`, 2026-07-15) | `nightly-releases-v0.25.1rc-310p-openeuler` (2026-08-04) |
+|---|---|---|
+| Single-stream | 9.53 tok/s | **10.74 tok/s (+12.7%)** |
+| Concurrent-8 | 61.31 tok/s | **67.62 tok/s (+10.3%)** |
+| Coding pass@1 | 10/10 | 10/10 (unchanged) |
+| Tool-calls | ❌ not populated | ❌ not populated — same raw `<tools>...</tools>` text, confirms this is a chat-template/model issue, not a vllm-ascend version issue |
+| Max context | 32768 | 32768 (unchanged) |
+
+**This is a genuine, no-downside win** — same context, same flags, same accuracy, just a real speed improvement from ~4 months of upstream vllm/vllm-ascend improvements, unlocked purely by the triton-stub-removal workaround this same investigation found in July.
+
+**Test 2 — same image, non-eager ACLGraph mode** (dropping `--enforce-eager`, adding `--additional-config '{"ascend_compilation_config": {"fuse_norm_quant": false}}' --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY", "cudagraph_capture_sizes": [1,4]}'`, same recipe as the July 2026-07-15/16 Huawei-internal POC test): **11.15 tok/s single-stream (+17%) but 65.47 tok/s concurrent-8 (worse than eager's 67.62), and requires halving `--max-model-len` to 16384** (same 310P attention-mask-compression limit documented everywhere else in this file). Coding pass@1 still 10/10, tool-calling still not populated. **Same trade-off already seen with the internal POC build in July — not worth the halved context for a marginal single-stream gain and a concurrent-throughput regression. Eager mode (Test 1) is the better candidate.**
+
+**Verdict: `nightly-releases-v0.25.1rc-310p-openeuler` in eager mode is a real upgrade candidate for production, not yet adopted.** Open items before actually switching: (1) it's a mutable `nightly-releases-*` tag, not an immutable numbered release like the currently-pinned `main-310p-openeuler-stable` — decide whether to accept that as a rolling dependency or re-tag it locally (`docker tag ... vllm-ascend:nightly-releases-v0.25.1rc-310p-openeuler-stable` or similar) the same way the current image was pinned; (2) no soak test done — only the standard bench-harness smoke test, same caveat as every other experiment in this file; (3) if adopted, `docker-compose.yml`'s `vllm-qwen25coder` service would need its `image:` updated and the entrypoint changed to add the triton-stub-removal `mv` step (same technique already used for `vllm-qwen36moe`), and the "Production Setup" pinned-baseline section at the top of this file would need updating to match the new baseline.
+
+**Test method:** production stopped (`docker compose --profile prod down`, which also stops `openwebui` since it has no profile — expected, not a bug), pulled the new image, tested standalone on port 8003 across two launches (eager, then ACLGraph), each verified via `bench/run_bench.py --base-url http://localhost:8003/v1`, old container removed before the next launch. After both tests, removed the final test container and restored production via `docker compose --profile prod up -d`, verified via `docker inspect` + `/v1/models` against the pinned baseline (`main-310p-openeuler-stable`, `Qwen2.5-Coder-14B-Instruct-abliterated`, `max_model_len: 32768`) — no changes made to `docker-compose.yml`.
+
+## v0.23.0 stable released; qwen36 profile repinned from rc1 (2026-08-17)
+
+vllm-ascend's `v0.23.0` line was promoted from release-candidate to a numbered stable release on 2026-08-16 (`quay.io/ascend/vllm-ascend:v0.23.0-310p-openeuler` / `v0.23.0-310p` on quay.io). Diffed the stable changelog against `v0.23.0rc1` (already running in production): the only post-rc1 additions (marked `†` in the release notes) are Qwen3.5/Qwen3.6 **MTP/speculative-decoding** bugfixes on 310P (`index_fill`/`GatherV2` OOB crashes, block-table overflow, Mamba-align hangs) — none of which apply to our config (no MTP/spec-decode in use).
+
+**Tested standalone on port 8003 with production's exact `qwen36` flags** (same model, same `--max-model-len 16384`, same ACLGraph config, same `--override-generation-config` sampling fix, triton-stub-removal workaround unchanged) — `/v1/models` matched production exactly, manual `is_prime` request came back correct (`finish_reason: stop`, 950 completion tokens with a generous `max_tokens`), tool-calling confirmed working (`finish_reason: tool_calls`, correct `get_weather` args). `bench/run_bench.py` harness numbers (27.04 tok/s single-stream, 40.67 tok/s concurrent-8) are within normal run-to-run noise of the rc1 baseline; harness pass@1 was 0/10 due to the same known 512-token-budget-too-small-for-reasoning artifact already documented elsewhere in this file — not a real regression, confirmed via the manual retest above.
+
+**Adopted:** `docker-compose.yml`'s `vllm-qwen36moe` service `image:` repinned from `v0.23.0rc1-310p-openeuler` to `v0.23.0-310p-openeuler`. Verified end-to-end via Compose: `docker compose --profile qwen36 up -d --force-recreate` → `Application startup complete` → `/v1/models` shows `qwen3.6-moe`, `max_model_len: 16384` → live `is_prime` request returns correct code, `finish_reason: stop`. No other flags changed. This is a strict improvement over the rc1 pin (immutable numbered release vs. a release-candidate tag, same or better behavior) — see "Production Setup" table above for the updated pinned value.
+
+## Qwen3.6-35B-A3B-w8a8 retested on v0.23.0 stable — the fatal IndexPut crash is GONE, real adoption candidate (2026-08-17)
+
+Followed up on the 2026-08-04 fatal-crash finding (`Eco-Tech/Qwen3.6-35B-A3B-w8a8` dying with AICPU `IndexPut`/error 507018 on the very first inference request, on `v0.23.0rc1-310p-openeuler`, both eager and ACLGraph modes — see that section above). Before writing this off permanently, checked upstream GitHub for the exact symptom and found it's a **known, actively-discussed bug**, not something specific to our setup:
+
+- Issue [#11188](https://github.com/vllm-project/vllm-ascend/issues/11188) and [#13050](https://github.com/vllm-project/vllm-ascend/issues/13050) (closed) both report the identical `507018`/`IndexPut` crash on 310P with this exact model, traced to `gdn_linear_attn` (the gated-delta-net linear-attention op, `vllm_ascend/_310p/ops/fla/gdn_310.py`) — a different call site than the already-merged/open PRs for multimodal-merge IndexPut crashes (#11435, #12914), which don't apply here since we send text-only requests.
+- A community user in that thread found a workaround by hand-patching `gdn_310.py`; a driver-version theory (24.x vs 25.x) was also raised. Rather than hand-patch blind, the pragmatic move was to just retest on the newly-released `v0.23.0-310p-openeuler` stable image first, since it ships a newer `torch_npu` (2.10.0.post4, vs whatever rc1 shipped) and CANN stack.
+
+**Retested standalone on port 8003, same launch recipe as the 2026-08-04 test** (`--dtype float16 --quantization ascend --max-model-len 24576 --max-num-seqs 16 --gpu-memory-utilization 0.90`, triton-stub-removal workaround, `--mamba-ssm-cache-dtype float16`, `--reasoning-parser qwen3`, `--tool-call-parser qwen3_coder`, `--override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'`), no patch applied to any vllm-ascend source file. **Result: the crash does not reproduce.** Startup succeeded (18.85 GiB/rank weights, matches prior test), and every inference request survived:
+
+| Test | Result |
+|---|---|
+| First `is_prime` request (1500 max_tokens) | No crash — hit token budget mid-reasoning (`finish_reason: length`), same verbose-reasoning pattern as the bf16 model, not a kernel failure |
+| `reverse_string`, `fizzbuzz` (3500 max_tokens) | Both `finish_reason: stop`, correct code |
+| `is_prime` retest (5000 max_tokens) | `finish_reason: stop`, correct code, 971 completion tokens |
+| Tool-calling (`get_weather`) | `finish_reason: tool_calls`, correct populated `tool_calls` array |
+| Full `bench/run_bench.py` suite (throughput + 10 accuracy prompts + concurrent-8 + tools) | Container survived the entire run with zero crashes — **31.08 tok/s single-stream, 39.44 tok/s concurrent-8**, tool-calling populated via the harness too. pass@1 1/10 is the known 512-token-budget artifact, not a real failure (see manual retests above) |
+| NPU memory after full bench run | ~38GB/44GB per chip used, ~6GB free per chip — meaningfully more headroom than the bf16 model typically leaves |
+
+Container was alive and stable for the full ~20-minute test window across all of the above. The 32768-context OOM ceiling found on 2026-08-04 (a separate, memory-driven failure, not the IndexPut kernel bug) was not retested — no reason to expect the ACLGraph/compile-workspace memory math changed, so **24576 remains the practical context ceiling** for this model (vs. bf16's 16384 — a real +50% context increase).
+
+**Root cause of why the crash disappeared is not confirmed** — plausibly the newer `torch_npu`/CANN bundled in the `v0.23.0` stable image vs. `v0.23.0rc1`, plausibly something environment/driver-related per the upstream thread's speculation. No vllm-ascend changelog entry explicitly claims an `IndexPut`/`gdn_310` fix between rc1 and stable. Treat this as "no longer reproducing under repeated testing," not "provably fixed" — worth extra vigilance (a longer soak, more varied prompts, multi-turn conversations) before fully trusting it under real usage load.
+
+**Important distinction from the current production model:** this w8a8 checkpoint is `Eco-Tech/Qwen3.6-35B-A3B-w8a8`, the **official (non-abliterated) Qwen quantization** — not the `huihui-ai` abliterated fork currently running as the `qwen36` profile. Adopting it as production would mean trading the current model's refusal-free behavior for standard content moderation/refusals, in exchange for more context headroom (24576 vs 16384) and slightly higher single-stream throughput (31.08 vs ~27-28.6 tok/s). **This is a values/behavior trade-off, not just a technical upgrade — not adopted pending an explicit decision on whether the abliteration trade-off is worth it.** If abliteration is a hard requirement, the alternative path is watching for either (a) an abliterated fork of this specific w8a8 checkpoint, or (b) applying the same w8a8 quantization process to the currently-running `Huihui-Qwen3.6-35B-A3B-abliterated` weights directly (untested, not attempted here).
+
+**Test method:** same as all tests in this file — production stopped, tested standalone on port 8003, torn down, production restored via `docker compose --profile qwen36 up -d --force-recreate` (using the newly-repinned stable image, see previous section) and verified against the pinned baseline. No changes made to `docker-compose.yml` model/service configuration — only the image-tag repin documented in the previous section.
 
 ## `adeepv/Qwen3.6-27B-W8A16-Ascend310P` — surveyed, NOT tested, ruled out for now (2026-07-22)
 

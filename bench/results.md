@@ -38,3 +38,29 @@ Run: `python3 bench/run_bench.py --label "<what changed>"`
 - **coding pass@1: 0/10** (0.0)
   - failures: reverse_string: FAIL, is_prime: FAIL, fizzbuzz: FAIL, two_sum: FAIL, gcd: FAIL, flatten: FAIL, count_vowels: FAIL, merge_sorted: FAIL, anagram: FAIL, roman: FAIL
 - tool-calls: ❌ not populated — 'HTTP Error 400: Bad Request'
+
+## 2026-08-04 16:44:36 — nightly-releases-v0.25.1rc-310p-openeuler, triton-stub-removed, dense Qwen2.5-Coder-14B
+- model: `Qwen2.5-Coder-14B-Instruct-abliterated`  sampling: `server-default`
+- **single-stream: 10.74 tok/s** (min 10.7, max 10.76); concurrent-8: 67.62 tok/s
+- **coding pass@1: 10/10** (1.0)
+- tool-calls: ❌ not populated — '<tools>\n{\n  "name": "get_weather",\n  "arguments": {\n    "location": "Paris"\n  }\n}\n</tools>'
+
+## 2026-08-04 16:53:36 — nightly-releases-v0.25.1rc-310p-openeuler, ACLGraph FULL_DECODE_ONLY, dense Qwen2.5-Coder-14B, maxlen16384
+- model: `Qwen2.5-Coder-14B-Instruct-abliterated`  sampling: `server-default`
+- **single-stream: 11.15 tok/s** (min 11.09, max 11.16); concurrent-8: 65.47 tok/s
+- **coding pass@1: 10/10** (1.0)
+- tool-calls: ❌ not populated — '<tools>\n{\n  "name": "get_weather",\n  "arguments": {\n    "location": "Paris"\n  }\n}\n</tools>'
+
+## 2026-08-17 17:17:05 — v0.23.0-stable-vs-rc1
+- model: `qwen3.6-moe`  sampling: `server-default`
+- **single-stream: 27.04 tok/s** (min 26.21, max 27.14); concurrent-8: 40.67 tok/s
+- **coding pass@1: 0/10** (0.0)
+  - failures: reverse_string: FAIL, is_prime: FAIL, fizzbuzz: FAIL, two_sum: FAIL, gcd: FAIL, flatten: FAIL, count_vowels: FAIL, merge_sorted: FAIL, anagram: FAIL, roman: FAIL
+- tool-calls: ❌ not populated — ''
+
+## 2026-08-17 17:36:52 — w8a8-v0.23.0stable-24576ctx
+- model: `qwen3.6-w8a8`  sampling: `server-default`
+- **single-stream: 31.08 tok/s** (min 30.98, max 31.13); concurrent-8: 39.44 tok/s
+- **coding pass@1: 1/10** (0.1)
+  - failures: is_prime: FAIL, fizzbuzz: FAIL, two_sum: FAIL, gcd: FAIL, flatten: FAIL, count_vowels: FAIL, merge_sorted: FAIL, anagram: FAIL, roman: FAIL
+- tool-calls: ✅ populated — get_weather({"location": "Paris"})

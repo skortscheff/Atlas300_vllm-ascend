@@ -64,7 +64,7 @@ services:
       - hermes
   vllm-qwen36moe:
     <<: *a1
-    image: quay.io/ascend/vllm-ascend:v0.23.0rc1-310p-openeuler
+    image: quay.io/ascend/vllm-ascend:v0.23.0-310p-openeuler
     container_name: vllm-qwen36moe
     profiles:
       - qwen36
