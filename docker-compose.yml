@@ -106,6 +106,27 @@ services:
     environment:
       OPENAI_API_BASE_URLS: http://vllm-backend:8000/v1
       OPENAI_API_KEYS: sk-no-key-required
+      ENABLE_RAG_WEB_SEARCH: "true"
+      WEB_SEARCH_ENGINE: searxng
+      SEARXNG_QUERY_URL: http://searxng:8080/search?q=<query>
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    networks:
+      - llmnet
+    ports:
+      - 8080:8080
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
 networks:
   llmnet: {}
 volumes:

@@ -1,0 +1,17 @@
+use_default_settings: true
+
+general:
+  instance_name: "vllm-atlas searxng"
+
+server:
+  secret_key: "2615f548796542d9f5427dca1f3325d567afdbb586e94f817e2a38323bdb3827"
+  limiter: false
+  image_proxy: true
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json
