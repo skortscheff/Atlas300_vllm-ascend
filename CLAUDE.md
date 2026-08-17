@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A Docker Compose deployment for LLM inference on Ascend NPU hardware. Two services:
+A Docker Compose deployment for LLM inference on Ascend NPU hardware. Three services:
 - **vLLM** (`quay.io/ascend/vllm-ascend:main-310p-openeuler`) — serves the model on port 8002
 - **Open WebUI** (`ghcr.io/open-webui/open-webui:latest`) — chat UI on port 3000
+- **SearXNG** (`docker.io/searxng/searxng:latest`) — self-hosted meta-search engine on port 8080, gives Open WebUI web search (added 2026-08-17, see "Web Search (SearXNG)" section below)
 
 ## ⚠️ Production Setup — always revertible to this state
 
@@ -41,13 +42,14 @@ docker exec vllm-qwen36moe python3 -c "import urllib.request,json; print(json.lo
 
 **Big finding this session: the 2026-08-04 "fatal, hard blocker" verdict on `Eco-Tech/Qwen3.6-35B-A3B-w8a8` (AICPU `IndexPut` crash on first inference) no longer reproduces on the new `v0.23.0` stable image.** Retested standalone on port 8003 at `--max-model-len 24576`: full bench suite, multiple varied prompts, and tool-calling all completed with zero crashes across a ~20-minute test window. See "Qwen3.6-35B-A3B-w8a8 retested on v0.23.0 stable" section below for full detail, including upstream GitHub issues (#11188, #13050) confirming this was a known, widely-reported bug, not something specific to our setup.
 
-**Not yet decided: whether to adopt this w8a8 model as the new `qwen36` profile.** This is a **values decision, not just a technical one** — `Eco-Tech/Qwen3.6-35B-A3B-w8a8` is the **official, non-abliterated** Qwen quantization, unlike the `huihui-ai` abliterated fork currently running in production. Adopting it would trade away refusal-free behavior in exchange for +50% context (24576 vs 16384) and modestly higher single-stream throughput (31.08 vs ~27-28.6 tok/s). Flagged to the user, not yet resolved as of this session's end.
+**Decision made: NOT adopting the w8a8 model.** User chose to stay on the current abliterated bf16 model (16384 context) rather than trade away refusal-free behavior for the official non-abliterated w8a8 checkpoint's +50% context / modest speed gain. `Eco-Tech/Qwen3.6-35B-A3B-w8a8` remains downloaded at `${MODELS_DIR}/Qwen3.6-35B-A3B-w8a8` (38GB) but unused — kept in case a future abliterated w8a8 release appears, or in case the decision is revisited. Confirmed no true Ascend-native w8a8 (msmodelslim format) abliterated release exists anywhere as of 2026-08-17 — checked HuggingFace and general web search; the closest thing is `coolthor/Huihui-Qwen3.6-35B-A3B-abliterated-FP8-DYNAMIC`, a different (FP8, not int8/w8a8) quantization format, untested and not confirmed compatible with `--quantization ascend`.
+
+**Also this session: added self-hosted SearXNG for Open WebUI web search, enabled by default.** See the new "Web Search (SearXNG)" section below for full setup, the config-persistence gotcha that was hit (Open WebUI ignores env vars once its DB has persisted config from a prior boot — had to patch the DB directly), and verification commands.
 
 **Concrete next steps, roughly in priority order:**
-1. **Get a decision on the w8a8 model swap** (see above) — if abliteration is a hard requirement, either wait for an abliterated fork of this exact w8a8 checkpoint, or try quantizing the currently-running `Huihui-Qwen3.6-35B-A3B-abliterated` weights directly (untested, no recipe yet).
-2. If adopted: update `docker-compose.yml`'s `vllm-qwen36moe` service (`command:` needs `--quantization ascend`, model path change to `/models/Qwen3.6-35B-A3B-w8a8`, `--served-model-name`, `--max-model-len 24576`) and do a longer soak test before trusting it as heavily as the bf16 model — this session's ~20-minute test is not equivalent to weeks of real production traffic, and the root cause of why the `IndexPut` crash stopped reproducing is unconfirmed (plausibly a `torch_npu`/CANN version bump between rc1 and stable, not a known/changelogged fix).
-3. Decide whether to also repin `vllm-qwen25coder` (the `prod` fallback profile, still on `main-310p-openeuler-stable`) — separately, `nightly-releases-v0.25.1rc-310p-openeuler` was found to be a real, zero-downside speed win for that dense model back on 2026-08-04 (+12.7% single-stream, +10.3% concurrent-8) but was never adopted; still an open item, unrelated to the `qwen36` work above.
-4. Decide whether to delete `${MODELS_DIR}/Qwen3.6-35B-A3B-w8a8` (38GB) if the w8a8 swap is declined, or keep it now that it's a live candidate again.
+1. Decide whether to also repin `vllm-qwen25coder` (the `prod` fallback profile, still on `main-310p-openeuler-stable`) — separately, `nightly-releases-v0.25.1rc-310p-openeuler` was found to be a real, zero-downside speed win for that dense model back on 2026-08-04 (+12.7% single-stream, +10.3% concurrent-8) but was never adopted; still an open item.
+2. Decide whether to delete `${MODELS_DIR}/Qwen3.6-35B-A3B-w8a8` (38GB, declined candidate — see above) or keep it around.
+3. Do a real soak test of the SearXNG web search integration under actual usage — this session only verified connectivity and config, not real multi-query usage patterns or result quality over time.
 
 Full narrative and exact commands for every test are in the dedicated sections below (search for "TESTED" or the date in the section heading).
 
@@ -96,7 +98,7 @@ None (2026-07-09) — the two legacy custom entries (`Qwen/Qwen2.5-Coder-14B-Ins
 ## Common Commands
 
 ```bash
-# Start production (Qwen3.6 MoE)
+# Start production (Qwen3.6 MoE) — also brings up openwebui and searxng (no profile gating, always included)
 docker compose --profile qwen36 up -d
 
 # Start the dense Qwen2.5-Coder-14B alternative instead
@@ -108,6 +110,7 @@ docker compose --profile prod --profile qwen36 down
 # View logs
 docker compose logs -f vllm-qwen25coder    # or vllm-qwen36moe, depending on active profile
 docker compose logs -f openwebui
+docker compose logs -f searxng
 
 # Check NPU status
 npu-smi info
@@ -121,10 +124,11 @@ sudo ipmitool sel list | tail -20  # hardware event log
 ## Architecture
 
 ```
-User → Open WebUI (port 3000) → vLLM API (http://vllm-qwen25coder:8000/v1) → Ascend NPU
+User → Open WebUI (port 3000) → vLLM API (http://vllm-backend:8000/v1) → Ascend NPU
+                                ↘ SearXNG (port 8080) → internet, for web search
 ```
 
-**Network:** Both services share the `llmnet` bridge network.
+**Network:** All three services (`vllm-*`, `openwebui`, `searxng`) share the `llmnet` bridge network.
 
 **Model:** `huihui-ai/Qwen2.5-Coder-14B-Instruct-abliterated` (2026-07-09, replaced the original `Qwen/Qwen2.5-Coder-14B-Instruct` — same architecture, `config.json` confirms identical `Qwen2ForCausalLM`, 48 layers, hidden_size 5120; only difference is refusal-removed weights) — stored at the absolute host path `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct-abliterated`, mounted into the container as `/models/Qwen2.5-Coder-14B-Instruct-abliterated`. Served under `--served-model-name Qwen2.5-Coder-14B-Instruct-abliterated` (renamed 2026-07-09 from the old placeholder name so Open WebUI shows the real model) — see the Open WebUI custom model entries note above. **The original non-abliterated weights were deleted 2026-07-22** (disk cleanup, see "Disk cleanup" note in the Models section) — a rollback to the non-abliterated model would now require re-downloading it.
 
@@ -172,6 +176,57 @@ print('Rows updated:', cur.rowcount)
 conn.close()
 "
 ```
+
+## Web Search (SearXNG)
+
+**Added 2026-08-17, enabled by default.** Open WebUI's web search feature is backed by a self-hosted SearXNG instance (`docker.io/searxng/searxng:latest`, container `searxng`, port 8080, on the `llmnet` network). No external API key, no third-party search API dependency — SearXNG itself fans out to public search engines.
+
+**Config files:**
+- `searxng/settings.yml` — mounted read-write into the container at `/etc/searxng`. Key settings: `search.formats` includes `json` (required — Open WebUI's backend calls SearXNG's JSON API, not the HTML UI), `server.limiter: false` (the rate-limiter plugin blocks non-browser/JSON requests by default; safe to disable since this instance is internal-only, not exposed to the public internet), `server.secret_key` (a generated hex string, low-sensitivity — used only for SearXNG's own session/CSRF signing, not an access credential to anything).
+- `openwebui` service env vars in `docker-compose.yml`: `ENABLE_RAG_WEB_SEARCH=true`, `WEB_SEARCH_ENGINE=searxng`, `SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>`.
+
+**Important gotcha, already hit once — Open WebUI persists config in its database, not just env vars.** Once `openwebui-data/webui.db` exists, Open WebUI reads settings (including web search) from the DB's `config` table on every boot; env vars are only used to **seed a brand-new/empty DB**, they do **not** override an already-persisted value. Since this repo's `openwebui-data/` volume predates the SearXNG work, adding the env vars alone was not enough — the DB's `config` table still had `web.search.enable = 'false'` from months ago, and the model reported having no web search tool available until this was found and fixed directly:
+
+```bash
+docker exec openwebui python3 -c "
+import sqlite3, time
+conn = sqlite3.connect('/app/backend/data/webui.db')
+cur = conn.cursor()
+now = int(time.time())
+updates = {
+    'web.search.enable': 'true',
+    'web.search.engine': '\"searxng\"',
+    'web.search.searxng_query_url': '\"http://searxng:8080/search?q=<query>\"',
+    'web.search.result_count': '3',
+    'web.search.concurrent_requests': '4',
+}
+for k, v in updates.items():
+    cur.execute('UPDATE config SET value = ?, updated_at = ? WHERE key = ?', (v, now, k))
+conn.commit()
+"
+docker restart openwebui
+```
+
+**This means the env vars in `docker-compose.yml` alone only guarantee web search is on-by-default for a fresh deployment** (new `openwebui-data/` volume, e.g. a rebuild from scratch) — they will **not** silently re-enable it if someone ever disables it via the Admin Settings UI and it gets persisted back to `false`. If web search stops working after any future Open WebUI config change, check the DB directly first (`SELECT key, value FROM config WHERE key LIKE 'web.search%'`) before assuming the service itself is broken.
+
+**Verifying it's working:**
+```bash
+# SearXNG itself returns results:
+curl -s "http://localhost:8080/search?q=test&format=json" | head -c 300
+# Open WebUI can reach it over the internal network:
+docker exec openwebui curl -s "http://searxng:8080/search?q=test&format=json" | head -c 300
+# Persisted config is correct:
+docker exec openwebui python3 -c "
+import sqlite3
+conn = sqlite3.connect('/app/backend/data/webui.db')
+cur = conn.cursor()
+cur.execute(\"SELECT key, value FROM config WHERE key IN ('web.search.enable','web.search.engine','web.search.searxng_query_url')\")
+for r in cur.fetchall(): print(r)
+"
+```
+In the Open WebUI chat UI, a web-search toggle (globe icon) appears in the message input box once this is correctly enabled — a hard browser refresh may be needed to see it after a backend config change.
+
+**Known limitation:** `wikidata` (one of SearXNG's many built-in engines) fails to initialize with an HTTP 403 in the container logs on every boot — this is expected/cosmetic, other engines (Wikipedia, Bing, DuckDuckGo, etc.) still work fine and this does not affect search result quality.
 
 ## LAN API Access
 
