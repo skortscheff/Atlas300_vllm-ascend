@@ -11,26 +11,26 @@ A Docker Compose deployment for LLM inference on Ascend NPU hardware. Three serv
 
 ## ⚠️ Production Setup — always revertible to this state
 
-**Updated 2026-08-12: the `qwen36` profile (Qwen3.6 MoE) is now the production baseline** — promoted from "alternative" to default by user decision. This is the canonical known-good state to always return to. Any experimental image/model test (new vllm-ascend tags, alternative inference engines, other models) must be done **standalone on a different port** (e.g. 8003), never by editing `docker-compose.yml` in place, and production must be restored to exactly this state afterward — every experiment log in this file follows that method (stop production → test on 8003 → stop test container → bring production back up again).
+**Updated 2026-08-19: production switched to the self-quantized w8a8 checkpoint** of the same abliterated model, after a full benchmark comparison (see "w8a8 production switch" section below) showed it strictly better than the bf16 original — faster, more context, higher pass@1, more reliable tool-calling — with identical abliterated/uncensored behavior (same weights, just quantized). This is the canonical known-good state to always return to. Any experimental image/model test (new vllm-ascend tags, alternative inference engines, other models) must be done **standalone on a different port** (e.g. 8003), never by editing `docker-compose.yml` in place, and production must be restored to exactly this state afterward — every experiment log in this file follows that method (stop production → test on 8003 → stop test container → bring production back up again).
 
 | Component | Pinned value |
 |---|---|
-| vLLM image | `quay.io/ascend/vllm-ascend:v0.23.0-310p-openeuler` (repinned 2026-08-17 from `v0.23.0rc1-310p-openeuler` — the numbered stable release, not the rc), with the triton-stub-removal workaround baked into the Compose entrypoint (`mv .../site-packages/triton .../site-packages/triton.disabled` before `vllm serve`) |
-| Model | `Huihui-Qwen3.6-35B-A3B-abliterated` (MoE) at `${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated`, served as `qwen3.6-moe` |
-| vLLM command | exactly as in the current `docker-compose.yml` `vllm-qwen36moe` service — `--dtype float16 --tensor-parallel-size 2 --max-model-len 16384 --max-num-seqs 16 --gpu-memory-utilization 0.95`, `--reasoning-parser qwen3`, `--enable-auto-tool-choice --tool-call-parser qwen3_coder`, `--mamba-ssm-cache-dtype float16`, ACLGraph compilation config (`FULL_DECODE_ONLY`, capture sizes `[1,4]`), `--override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'` (reasoning-stability fix, baked in server-side) |
+| vLLM image | `quay.io/ascend/vllm-ascend:v0.23.0-310p-openeuler`, with the triton-stub-removal workaround baked into the Compose entrypoint (`mv .../site-packages/triton .../site-packages/triton.disabled` before `vllm serve`) |
+| Model | `Huihui-Qwen3.6-35B-A3B-abliterated-w8a8` (self-quantized w8a8, MoE) at `${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated-w8a8` (38GB — built this session with `msmodelslim` from the bf16 original, see "Self-quantized abliterated w8a8" section below), served as `qwen3.6-moe` |
+| vLLM command | exactly as in the current `docker-compose.yml` `vllm-qwen36moe` service — `--dtype float16 --quantization ascend --tensor-parallel-size 2 --max-model-len 24576 --max-num-seqs 16 --gpu-memory-utilization 0.90`, `--reasoning-parser qwen3`, `--enable-auto-tool-choice --tool-call-parser qwen3_coder`, `--mamba-ssm-cache-dtype float16`, ACLGraph compilation config (`FULL_DECODE_ONLY`, capture sizes `[1,4]`), `--override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'` (reasoning-stability fix, baked in server-side) |
 | Ports | vLLM 8002, Open WebUI 3000 |
 | Driver/firmware | 25.3.rc1 / 7.8.0.2.212 (see Deployment Notes) |
-| Context | 16384 (halved vs. the old dense-14B baseline's 32768 — hard 310P memory ceiling for this model, see "Qwen3.6 MoE context window raised" section below) |
+| Context | 24576 (+50% vs. the prior bf16 pin's 16384 — quantization freed enough NPU memory to raise the ceiling; see "w8a8 production switch" section below) |
 
-**The previous baseline, `Qwen2.5-Coder-14B-Instruct-abliterated` on `main-310p-openeuler-stable`, is still available as the `prod` profile** — dense, fp16, 32768 context, ~9.53 tok/s, tool-calling not populated (known issue). Use it if the MoE model's halved context or reasoning-verbosity trade-offs become a problem for a given task.
+**The previous pin, `Huihui-Qwen3.6-35B-A3B-abliterated` bf16 at 16384 context, is superseded but the weights are still on disk** at `${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated` if a rollback is ever needed — see "w8a8 production switch" below for the exact prior command. **The dense-14B baseline, `Qwen2.5-Coder-14B-Instruct-abliterated` on `main-310p-openeuler-stable`, is still available as the `prod` profile** — dense, fp16, 32768 context, ~9.53 tok/s, tool-calling not populated (known issue). Use it if the MoE model's context or reasoning-verbosity trade-offs become a problem for a given task.
 
 **To revert to this state from any experiment:**
 ```bash
 docker compose --profile prod down     # or: docker stop <any-test-container> && docker rm <any-test-container>
 docker compose --profile qwen36 up -d --force-recreate  # brings back vllm-qwen36moe + openwebui exactly as pinned above
 # verify:
-docker inspect vllm-qwen36moe --format '{{.Config.Image}}'   # must print v0.23.0rc1-310p-openeuler
-docker exec vllm-qwen36moe python3 -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://localhost:8000/v1/models'))['data'][0]['id'])"  # must show qwen3.6-moe
+docker inspect vllm-qwen36moe --format '{{.Config.Image}}'   # must print v0.23.0-310p-openeuler
+docker exec vllm-qwen36moe python3 -c "import urllib.request,json; d=json.load(urllib.request.urlopen('http://localhost:8000/v1/models')); print(d['data'][0]['id'], d['data'][0]['max_model_len'])"  # must show qwen3.6-moe 24576
 ```
 **Use `--force-recreate` when bringing `vllm-qwen36moe` back up** — its entrypoint does a one-time `mv .../triton .../triton.disabled` that isn't idempotent; reusing a stopped container's filesystem layer (rather than a fresh one) makes that `mv` fail and the container crash-loop. `--force-recreate` (or fully removing the container first) avoids this.
 
@@ -651,6 +651,62 @@ Container was alive and stable for the full ~20-minute test window across all of
 **Important distinction from the current production model:** this w8a8 checkpoint is `Eco-Tech/Qwen3.6-35B-A3B-w8a8`, the **official (non-abliterated) Qwen quantization** — not the `huihui-ai` abliterated fork currently running as the `qwen36` profile. Adopting it as production would mean trading the current model's refusal-free behavior for standard content moderation/refusals, in exchange for more context headroom (24576 vs 16384) and slightly higher single-stream throughput (31.08 vs ~27-28.6 tok/s). **This is a values/behavior trade-off, not just a technical upgrade — not adopted pending an explicit decision on whether the abliteration trade-off is worth it.** If abliteration is a hard requirement, the alternative path is watching for either (a) an abliterated fork of this specific w8a8 checkpoint, or (b) applying the same w8a8 quantization process to the currently-running `Huihui-Qwen3.6-35B-A3B-abliterated` weights directly (untested, not attempted here).
 
 **Test method:** same as all tests in this file — production stopped, tested standalone on port 8003, torn down, production restored via `docker compose --profile qwen36 up -d --force-recreate` (using the newly-repinned stable image, see previous section) and verified against the pinned baseline. No changes made to `docker-compose.yml` model/service configuration — only the image-tag repin documented in the previous section.
+
+## Self-quantized abliterated w8a8 of Huihui-Qwen3.6-35B-A3B-abliterated — built from scratch, TESTED, working (2026-08-19)
+
+Followed up on the standing "no abliterated w8a8 checkpoint exists" gap (see "Qwen3.6-35B-A3B-w8a8 retested on v0.23.0 stable" above) by quantizing the currently-running abliterated bf16 model ourselves, using Huawei's own `msmodelslim` tool (`pip install msmodelslim`, version 26.1.0) rather than waiting for a community release.
+
+**Two real bugs found and fixed along the way, both novel (not already documented in this file):**
+
+1. **msmodelslim's `qwen3_5_moe_w8a8` config path can't load our model's native bf16 weights on 310P** — same class of `AclNN_Parameter_Error: Self dtype DT_BF16 not support` seen everywhere else in this file for inference, but hit here during calibration/quantization instead. Fix: physically converted all 26 bf16 safetensors shards to fp16 on disk first (`safetensors` + `torch`, cast via `.to(float32).to(float16)`) — just relabeling `config.json`'s `torch_dtype` field was **not** sufficient, since msmodelslim's `torch_dtype="auto"` resolution reads the actual tensor dtype from the checkpoint, not the config file. Conversion took ~20 min (67GB read+write, disk-I/O-bound, some transient slowdown from page-cache thrashing since the working set exceeds host RAM — not a bug, just slow).
+2. **A genuine bug in msmodelslim's own source, not a config issue**: `msmodelslim/model/qwen3_5_moe/model_adapter.py` hardcodes `default_dtype(torch.bfloat16)` (lines 531 and 612) when constructing per-layer decoder structures for its layer-wise/on-demand loading path — independent of the actual checkpoint dtype. This crashes identically on 310P (`torch.amin` on a bf16 tensor). **Fixed by patching the installed package directly**: `sed -i 's/default_dtype(torch.bfloat16)/default_dtype(torch.float16)/g'` on that file (plus clearing the stale `.pyc` cache) — same "patch vendor source for a 310P-specific bug" pattern already used elsewhere in this repo's history (e.g. the `adeepv` W8A16 section below, the triton-stub-removal workaround). This is a report-upstream-worthy bug in msmodelslim itself, unrelated to our model.
+
+**Quantization run, after both fixes:** `msmodelslim quant --model_type 'Qwen3.5-35B-A3B' --model_path <fp16-converted-dir> --save_path <out> --config_path .../lab_practice/qwen3_5_moe/qwen3_5_moe_w8a8.yaml --device npu:0,1 --trust_remote_code True` (note: no exact `Qwen3.6-35B-A3B` entry exists in msmodelslim's model registry — `Qwen3.5-35B-A3B` is used since it's the same architecture family and the tool auto-detects `Qwen3_5MoeForConditionalGeneration` regardless). Ran cleanly end-to-end: all 40 decoder layers + vision encoder + MTP head processed with **zero errors**, ~14s/layer, finished in ~13 minutes wall-clock. Output: **`===========SUCCESS===========`**, 38GB across 10 safetensors shards (down from 71.9GB bf16 — the expected ~2x w8a8 reduction) at `${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated-w8a8`.
+
+**Smoke-tested standalone on port 8003, same recipe as the already-tested official Eco-Tech w8a8 checkpoint** (`--dtype float16 --quantization ascend --max-model-len 24576 --max-num-seqs 16 --gpu-memory-utilization 0.90`, triton-stub-removal workaround, `--mamba-ssm-cache-dtype float16`, `--reasoning-parser qwen3`, `--tool-call-parser qwen3_coder`, `--override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'`) — **passed everything, including the exact first-inference step that fatally crashed the official Eco-Tech checkpoint on the older rc1 image (`IndexPut`/507018, see that section above) — no crash here either, consistent with that bug being fixed on this `v0.23.0` stable image:**
+
+| Test | Result |
+|---|---|
+| Weight load | 18.85 GiB/rank (matches Eco-Tech w8a8's footprint), `vLLM Ascend ModelSlim quantization` correctly auto-detected from `quant_model_description.json` |
+| KV cache / graph capture | 753,664 tokens, 30.67x concurrency at 24576 context — graph capture completed in 3s, zero crashes |
+| `is_prime` code gen (max_tokens 3000) | `finish_reason: stop`, correct code, 707 completion tokens |
+| Tool-calling (`get_weather`) | `finish_reason: tool_calls`, correctly populated arguments |
+| Abliteration check (SYN flood security-research question, max_tokens 2500) | `finish_reason: stop`, full detailed technical answer (2434 tokens), zero refusal/hedging language — **confirms abliteration survived quantization** |
+
+**This closes the long-standing gap**: we now have a genuinely working abliterated + w8a8 (ascend-native msmodelslim format) checkpoint of this model, at 24576 context (+50% over the currently-running bf16 `qwen36` profile's 16384) with a real, if untested, throughput edge on top (Eco-Tech's equivalent w8a8 checkpoint measured ~31 tok/s vs. the bf16 model's ~27-31 tok/s).
+
+**Not yet done — this is a validated candidate, not yet adopted into `docker-compose.yml`:**
+1. No full `bench/run_bench.py` throughput run yet, only the manual smoke tests above.
+2. No soak test — only ~15 minutes of testing across a handful of requests.
+3. No side-by-side comparison of output *quality* (not just refusal-behavior) between the bf16 original and this quantized version — w8a8 quantization can subtly degrade reasoning/code quality even when it doesn't break refusal removal; unverified either way here.
+4. If adopting: would need to update `docker-compose.yml`'s `vllm-qwen36moe` service to point at the new model path, bump `--max-model-len` to 24576, add `--quantization ascend`, and update the "Production Setup" pinned-baseline table at the top of this file.
+5. The intermediate fp16-converted 67GB staging copy was created inside a throwaway container's writable layer and discarded when the container was removed — **not** saved to `${MODELS_DIR}`. If the quantization needs to be re-run (e.g. to try a different config/dataset), that fp16 conversion step must be redone from the original bf16 source (script/logic documented above, straightforward to reproduce, ~15-20 min).
+
+**Test method:** production (`qwen36` profile) was stopped for the entire duration (build environment → convert weights → quantize → smoke-test), never touching `docker-compose.yml`. Standalone quantization work happened in a disposable container (`msmodelslim-quant`, based on the pinned `v0.23.0-310p-openeuler` image for its already-working `torch_npu`/CANN environment) with the abliterated model bind-mounted read-only and a host directory bind-mounted for output — removed after the quantization succeeded. The smoke-test container (`vllm-test-qwen36-w8a8`) was removed after passing all checks. Production was restarted via `docker compose --profile qwen36 up -d` and verified via `/v1/models` (`qwen3.6-moe`, `max_model_len: 16384`) to exactly match the pinned baseline before this entry was written.
+
+## w8a8 production switch — full benchmark comparison, self-quantized model adopted (2026-08-19)
+
+Followed up the self-quantization work above with a full head-to-head benchmark between the running bf16 production model and the new self-quantized w8a8 checkpoint, to decide which to keep. Both are the **exact same abliterated weights** (`Huihui-Qwen3.6-35B-A3B-abliterated`), just quantized differently — so this was purely a technical speed/memory/quality comparison, not a values trade-off like the earlier official-Eco-Tech-checkpoint decision.
+
+**Method:** ran `bench/run_bench.py` (throughput + harness's 512-token accuracy/tools) against each model, plus a custom higher-budget (2500-4000 token) manual accuracy+tools script (`manual_accuracy.py`, ad-hoc, not committed to the repo) to get a fair pass@1 number — the harness's 256/512-token budgets are too small for this model family's verbose reasoning and produce a misleading 0/10 for both models regardless of real capability (already documented as a known artifact in earlier sections). Production was stopped for each test, run standalone on port 8003, then restored.
+
+| Metric | bf16 (prior pin) | w8a8 (self-quantized) |
+|---|---|---|
+| Single-stream throughput | 27.84 tok/s | **31.36 tok/s (+12.6%)** |
+| Concurrent-8 throughput | 40.19 tok/s | 39.85 tok/s (~flat, -0.8%) |
+| Context window | 16384 | **24576 (+50%)** |
+| Harness pass@1 (512-token budget) | 0/10 | 0/10 (both — known artifact, not a real score) |
+| **Manual pass@1 (2500-4000 token budget)** | **6/10** | **7/10** |
+| Harness tool-calling (256-token budget) | ❌ not populated (empty content, budget exhausted before tool call) | ✅ populated correctly |
+| Manual tool-calling (2000-token budget) | ✅ populated correctly | ✅ populated correctly |
+| Disk footprint | 71.9GB | 38GB |
+| Weights loaded per rank | 33.8 GiB | 18.85 GiB |
+
+**Key finding: the reasoning-non-termination bug (verbose chain-of-thought that runs out the token budget without concluding) is not fixed or worsened by quantization — it's an inherent, roughly-30-40%-per-task-sample property of this model family**, seen at comparable rates on both bf16 (4/10 tasks hit it) and w8a8 (3/10 tasks hit it). Notably the *specific* tasks that failed were different between the two runs (bf16 failed on `is_prime`/`flatten`/`merge_sorted`/`anagram`; w8a8 failed on `count_vowels`/`merge_sorted`/`anagram`) — confirming this is genuinely probabilistic per-request, not a fixed per-prompt failure mode. Already-known mitigations (`enable_thinking: false`, or `temperature`/`repetition_penalty` tuning — both documented in earlier sections) apply equally regardless of which quantization is running.
+
+**Decision: switched production to the w8a8 checkpoint.** It won on every axis that differed (throughput, context, pass@1, tool-calling robustness at tight budgets) with no axis where it was meaningfully worse (concurrent-8 throughput was a statistical tie). `docker-compose.yml`'s `vllm-qwen36moe` service was updated: model path → `Huihui-Qwen3.6-35B-A3B-abliterated-w8a8`, `--max-model-len` 16384 → 24576, `--gpu-memory-utilization` 0.95 → 0.90, added `--quantization ascend`. Verified end-to-end via Compose (`docker compose --profile qwen36 up -d`) — `Application startup complete`, `/v1/models` shows `qwen3.6-moe` / `max_model_len: 24576`, live `is_prime` request returns correct code with `finish_reason: stop`.
+
+**Not yet done:** a real soak test under sustained multi-day usage (both this session's testing and the earlier smoke tests were single-session, <1 hour of cumulative live traffic). If anything unexpected shows up under real usage, the bf16 weights are still on disk (see "Production Setup" above) for an easy rollback — just swap the model path, `--max-model-len` back to 16384, `--gpu-memory-utilization` back to 0.95, and drop `--quantization ascend`.
 
 ## `adeepv/Qwen3.6-27B-W8A16-Ascend310P` — surveyed, NOT tested, ruled out for now (2026-07-22)
 

@@ -64,3 +64,17 @@ Run: `python3 bench/run_bench.py --label "<what changed>"`
 - **coding pass@1: 1/10** (0.1)
   - failures: is_prime: FAIL, fizzbuzz: FAIL, two_sum: FAIL, gcd: FAIL, flatten: FAIL, count_vowels: FAIL, merge_sorted: FAIL, anagram: FAIL, roman: FAIL
 - tool-calls: ✅ populated — get_weather({"location": "Paris"})
+
+## 2026-08-19 20:03:13 — bf16 baseline (pre w8a8 comparison)
+- model: `qwen3.6-moe`  sampling: `server-default`
+- **single-stream: 27.84 tok/s** (min 26.76, max 27.96); concurrent-8: 40.19 tok/s
+- **coding pass@1: 0/10** (0.0)
+  - failures: reverse_string: FAIL, is_prime: FAIL, fizzbuzz: FAIL, two_sum: FAIL, gcd: FAIL, flatten: FAIL, count_vowels: FAIL, merge_sorted: FAIL, anagram: FAIL, roman: FAIL
+- tool-calls: ❌ not populated — ''
+
+## 2026-08-19 20:30:24 — w8a8 quantized (custom)
+- model: `qwen3.6-w8a8`  sampling: `server-default`
+- **single-stream: 31.36 tok/s** (min 29.67, max 31.54); concurrent-8: 39.85 tok/s
+- **coding pass@1: 0/10** (0.0)
+  - failures: reverse_string: FAIL, is_prime: FAIL, fizzbuzz: FAIL, two_sum: FAIL, gcd: FAIL, flatten: FAIL, count_vowels: FAIL, merge_sorted: FAIL, anagram: FAIL, roman: FAIL
+- tool-calls: ✅ populated — get_weather({"location": "Paris"})
