@@ -6,15 +6,15 @@ Este servidor expone una API compatible con OpenAI en la red local. Cualquier he
 
 | Modelo activo | URL base |
 |--------|----------|
-| `qwen3.6-moe` (Huihui-Qwen3.6-35B-A3B-abliterated, MoE) | `http://<HOST_IP>:8002/v1` |
+| `qwen3.6-moe` (Huihui-Qwen3.6-35B-A3B-abliterated-w8a8, MoE, self-quantized) | `http://<HOST_IP>:8002/v1` |
 
-> **Nota:** el stack soporta dos modelos intercambiables mediante *Compose profiles* (`prod` y `qwen36`) — ambos comparten el mismo puerto 8002, así que solo uno está activo a la vez. Este documento describe el modelo **actualmente activo** (`qwen36`, desde 2026-07-22). El otro modelo disponible es `Qwen2.5-Coder-14B-Instruct-abliterated` (perfil `prod`) — mismo endpoint, mismo formato de API, pero más lento (~9.6 tok/s), sin tool-calling funcional, y sin razonamiento (`reasoning_content`). Ver `CLAUDE.md`, sección "Switching Models", para cambiar entre ambos.
+> **Nota:** el stack soporta dos modelos intercambiables mediante *Compose profiles* (`prod` y `qwen36`) — ambos comparten el mismo puerto 8002, así que solo uno está activo a la vez. Este documento describe el modelo **actualmente activo** (`qwen36`, desde 2026-08-19 en su variante w8a8 auto-cuantizada). El otro modelo disponible es `Qwen2.5-Coder-14B-Instruct-abliterated` (perfil `prod`) — mismo endpoint, mismo formato de API, pero más lento (~9.5 tok/s), sin tool-calling funcional, y sin razonamiento (`reasoning_content`). Ver `CLAUDE.md`, sección "Switching Models", para cambiar entre ambos.
 
 **API key:** No se requiere autenticación. Si tu cliente lo exige, usa cualquier cadena de texto, por ejemplo `sk-local`.
 
-**Ventana de contexto:** **16384 tokens** (entrada + salida combinados) — menor que el modelo anterior (32768), por limitación de memoria de la 310P con este modelo MoE de 35B parámetros en bf16, pero con margen suficiente confirmado (KV cache pool de ~120K tokens, ~7.3x de concurrencia a este límite) (ver `CLAUDE.md`).
+**Ventana de contexto:** **24576 tokens** (entrada + salida combinados) — un +50% respecto al bf16 original (16384), gracias a la cuantización w8a8 (auto-generada con `msmodelslim` a partir de los mismos pesos abliterados) que reduce el footprint de pesos de ~34 GiB/chip a ~19 GiB/chip, liberando memoria para más contexto (ver `CLAUDE.md`, sección "Self-quantized abliterated w8a8").
 
-**Velocidad:** ~28.6 tok/s en una sola conversación — unas **3x más rápido** que el modelo anterior (Qwen2.5-Coder-14B, ~9.6 tok/s), gracias a la arquitectura MoE (35B totales, ~3B activos por token) y al modo ACLGraph (no-eager) de `v0.23.0rc1-310p-openeuler`.
+**Velocidad:** ~31 tok/s en una sola conversación — gracias a la arquitectura MoE (35B totales, ~3B activos por token), la cuantización w8a8, y el modo ACLGraph (no-eager) de `v0.23.0-310p-openeuler` (release estable, ya no release-candidate).
 
 **Razonamiento (chain-of-thought):** este modelo "piensa" antes de responder — el contenido de razonamiento llega en el campo **`message.reasoning_content`** (no en `content`), gracias a `--reasoning-parser qwen3`. Es normal ver respuestas con `reasoning_content` largo (600-1600+ tokens) antes de la respuesta final en `content`. **Usa siempre `max_tokens >= 2000-3000`** — con límites bajos (ej. 512) la respuesta puede cortarse a mitad del razonamiento sin llegar a producir contenido útil.
 

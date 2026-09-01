@@ -4,6 +4,49 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v1.16] — 2026-09-01
+
+Summary entry bridging several months of untracked changes — see `CLAUDE.md` for the full
+session-by-session narrative and every intermediate experiment. This entry captures where the
+stack actually landed, not every step along the way.
+
+### Changed
+- **Compose profiles reintroduced** — `prod` (dense `Qwen2.5-Coder-14B-Instruct-abliterated`,
+  `main-310p-openeuler-stable`, 32768 context) and `qwen36` (MoE, default production) now coexist
+  as mutually-exclusive profiles sharing port 8002 and the NPU devices. Plain `docker compose up -d`
+  with no profile only starts `openwebui` and `searxng`.
+- **Production model switched to `Huihui-Qwen3.6-35B-A3B-abliterated`** (MoE, `huihui-ai` abliterated
+  fork of Qwen3.6) — ~3x faster than the prior dense 14B baseline, with a known reasoning-stability
+  fix (`--override-generation-config` temperature/repetition-penalty tuning) baked in server-side.
+- **Production requantized to a self-quantized w8a8 checkpoint** of the same abliterated weights
+  (built in-house with `msmodelslim`, since no community abliterated w8a8 release exists) —
+  `--max-model-len` raised 16384 → 24576, `--quantization ascend` added, weight footprint halved.
+- **vLLM image repinned** `main-310p-openeuler-stable` → `v0.23.0-310p-openeuler` (numbered stable
+  release) for the `qwen36` profile, using a triton-stub-removal entrypoint workaround for a
+  permanent 310P/triton-ascend platform gap (upstream PR #8181, still unmerged).
+- **Model host paths renamed** to reflect abliterated/quantized provenance
+  (`Qwen2.5-Coder-14B-Instruct` → `-abliterated`, new `Huihui-Qwen3.6-35B-A3B-abliterated-w8a8` path).
+
+### Added
+- **SearXNG** — self-hosted meta-search engine (`docker.io/searxng/searxng:latest`, port 8080),
+  wired into Open WebUI for web search with no external API key.
+- **Tool-calling support** — `--enable-auto-tool-choice --tool-call-parser qwen3_coder` on the
+  `qwen36` profile actually populates `message.tool_calls` correctly (the dense `prod` profile's
+  tool-calling remains a known non-working issue).
+- **Reasoning-content separation** — `--reasoning-parser qwen3` routes chain-of-thought into
+  `message.reasoning_content` instead of mixing it into `content`.
+
+### Removed
+- `huawei-support-case.md` and `recover-card.sh` — historical hardware-defect investigation for
+  the second (now physically removed) Atlas 300I Duo card. Removed from the repo (and purged from
+  git history via a history rewrite) because the writeup contained personal contact details and
+  hardware serial numbers; no longer actionable since the card is gone.
+
+### Fixed
+- **Second Atlas 300I Duo card physically removed** after a confirmed, unresolvable hardware
+  defect (firmware never boots, `flag_r=0x0`) — the host now runs a single 2-chip card,
+  `--tensor-parallel-size 2` unchanged.
+
 ## [v1.14] — 2026-04-05
 
 ### Changed
