@@ -78,3 +78,10 @@ Run: `python3 bench/run_bench.py --label "<what changed>"`
 - **coding pass@1: 0/10** (0.0)
   - failures: reverse_string: FAIL, is_prime: FAIL, fizzbuzz: FAIL, two_sum: FAIL, gcd: FAIL, flatten: FAIL, count_vowels: FAIL, merge_sorted: FAIL, anagram: FAIL, roman: FAIL
 - tool-calls: ✅ populated — get_weather({"location": "Paris"})
+
+## 2026-09-01 16:15:35 — routine check 2026-09-01, v0.23.0 stable w8a8
+- model: `qwen3.6-moe`  sampling: `server-default`
+- **single-stream: 31.29 tok/s** (min 30.74, max 31.59); concurrent-8: 31.41 tok/s
+- **coding pass@1: 0/10** (0.0)
+  - failures: reverse_string: FAIL, is_prime: FAIL, fizzbuzz: FAIL, two_sum: FAIL, gcd: FAIL, flatten: FAIL, count_vowels: FAIL, merge_sorted: FAIL, anagram: FAIL, roman: FAIL
+- tool-calls: ✅ populated — get_weather({"location": "Paris"})

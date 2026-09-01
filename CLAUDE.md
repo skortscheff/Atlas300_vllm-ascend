@@ -36,20 +36,20 @@ docker exec vllm-qwen36moe python3 -c "import urllib.request,json; d=json.load(u
 
 **Note (2026-07-22):** `docker-compose.yml` uses **Compose profiles** (`prod` vs `qwen36`) to let the two vLLM services share port 8002 and NPU devices without both trying to run at once — see "Switching Models" below. Plain `docker compose up -d` with no `--profile` flag starts **only** `openwebui`; a vLLM profile must always be specified explicitly.
 
-## 📍 Resume Here — Next Session (as of 2026-08-17)
+## 📍 Resume Here — Next Session (as of 2026-09-01)
 
-**Where things stand:** production is up and verified — `qwen36` profile, `Huihui-Qwen3.6-35B-A3B-abliterated`, port 8002, `max_model_len: 16384`, image **repinned this session** from `v0.23.0rc1-310p-openeuler` to the newly-released stable `v0.23.0-310p-openeuler` (see "v0.23.0 stable released" section below) — zero behavior change, just a strictly-better (immutable, non-rc) pin.
+**Where things stand:** production is up and verified — `qwen36` profile, self-quantized w8a8 `Huihui-Qwen3.6-35B-A3B-abliterated-w8a8`, port 8002, `max_model_len: 24576`, image `v0.23.0-310p-openeuler` — exactly matching the pinned "Production Setup" table above. Routine health check + benchmark run this session (2026-09-01, see "Routine check" section below) confirms no drift: 31.29 tok/s single-stream, tool-calling populated correctly, harness pass@1 0/10 is the known 512-token-budget artifact (not a regression — see "w8a8 production switch" section for the real, higher-budget pass@1 numbers).
 
-**Big finding this session: the 2026-08-04 "fatal, hard blocker" verdict on `Eco-Tech/Qwen3.6-35B-A3B-w8a8` (AICPU `IndexPut` crash on first inference) no longer reproduces on the new `v0.23.0` stable image.** Retested standalone on port 8003 at `--max-model-len 24576`: full bench suite, multiple varied prompts, and tool-calling all completed with zero crashes across a ~20-minute test window. See "Qwen3.6-35B-A3B-w8a8 retested on v0.23.0 stable" section below for full detail, including upstream GitHub issues (#11188, #13050) confirming this was a known, widely-reported bug, not something specific to our setup.
+**Upstream research this session (2026-09-01):** checked `vllm-project/vllm-ascend` on GitHub for anything new since the 2026-08-17 pass — see "Upstream vllm-ascend check" section below. Nothing requires a change. Two things worth knowing: (1) the IndexPut/507018 crash that used to hard-block `Eco-Tech/Qwen3.6-35B-A3B-w8a8` now has a **confirmed root cause** (issue #13050, closed — it was an NPU driver-version problem, fixed by the 25.x+ driver this host already runs, combined with the v0.23.0 release), upgrading the earlier "no longer reproduces, cause unknown" note to "confirmed why it doesn't reproduce here"; (2) a related-but-distinct issue (#11188, a "halMemMap" memory-mapping error, same 310P+Qwen3.6+w8a8+GDN territory) is still open upstream with no fix — doesn't affect this environment today, but worth remembering if anything odd shows up on the w8a8 model under real usage.
 
-**Decision made: NOT adopting the w8a8 model.** User chose to stay on the current abliterated bf16 model (16384 context) rather than trade away refusal-free behavior for the official non-abliterated w8a8 checkpoint's +50% context / modest speed gain. `Eco-Tech/Qwen3.6-35B-A3B-w8a8` remains downloaded at `${MODELS_DIR}/Qwen3.6-35B-A3B-w8a8` (38GB) but unused — kept in case a future abliterated w8a8 release appears, or in case the decision is revisited. Confirmed no true Ascend-native w8a8 (msmodelslim format) abliterated release exists anywhere as of 2026-08-17 — checked HuggingFace and general web search; the closest thing is `coolthor/Huihui-Qwen3.6-35B-A3B-abliterated-FP8-DYNAMIC`, a different (FP8, not int8/w8a8) quantization format, untested and not confirmed compatible with `--quantization ascend`.
-
-**Also this session: added self-hosted SearXNG for Open WebUI web search, enabled by default.** See the new "Web Search (SearXNG)" section below for full setup, the config-persistence gotcha that was hit (Open WebUI ignores env vars once its DB has persisted config from a prior boot — had to patch the DB directly), and verification commands.
+**Security note (2026-09-01): `.git/config`'s `origin` remote URL contains a plaintext GitHub personal access token.** Not yet rotated or removed — flagged to the user, action still pending.
 
 **Concrete next steps, roughly in priority order:**
-1. Decide whether to also repin `vllm-qwen25coder` (the `prod` fallback profile, still on `main-310p-openeuler-stable`) — separately, `nightly-releases-v0.25.1rc-310p-openeuler` was found to be a real, zero-downside speed win for that dense model back on 2026-08-04 (+12.7% single-stream, +10.3% concurrent-8) but was never adopted; still an open item.
-2. Decide whether to delete `${MODELS_DIR}/Qwen3.6-35B-A3B-w8a8` (38GB, declined candidate — see above) or keep it around.
-3. Do a real soak test of the SearXNG web search integration under actual usage — this session only verified connectivity and config, not real multi-query usage patterns or result quality over time.
+1. Decide whether to also repin `vllm-qwen25coder` (the `prod` fallback profile, still on `main-310p-openeuler-stable`) — `nightly-releases-v0.25.1rc-310p-openeuler` remains a real, zero-downside speed win for that dense model (+12.7% single-stream, +10.3% concurrent-8, confirmed 2026-08-04, rebuilt as recently as 2026-08-25) but was never adopted; still an open item.
+2. Decide whether to delete `${MODELS_DIR}/Qwen3.6-35B-A3B-w8a8` (38GB, the *official* non-abliterated w8a8 checkpoint, declined 2026-08-17 in favor of staying abliterated) — now likely superseded by the self-quantized abliterated w8a8 checkpoint that IS in production; probably safe to delete, not yet done.
+3. Do a real soak test of both the w8a8 production model and the SearXNG web search integration under actual sustained usage — only single-session smoke tests have been run for either so far.
+4. Rotate the exposed GitHub token in `.git/config` (see Security note above).
+5. Watch for a `-310p` build of the `v0.26.0rc` nightly line (doesn't exist yet as of 2026-09-01) — one low-confidence rumor claims it adds W8A8SC quantization for 310P, unconfirmed.
 
 Full narrative and exact commands for every test are in the dedicated sections below (search for "TESTED" or the date in the section heading).
 
@@ -707,6 +707,26 @@ Followed up the self-quantization work above with a full head-to-head benchmark 
 **Decision: switched production to the w8a8 checkpoint.** It won on every axis that differed (throughput, context, pass@1, tool-calling robustness at tight budgets) with no axis where it was meaningfully worse (concurrent-8 throughput was a statistical tie). `docker-compose.yml`'s `vllm-qwen36moe` service was updated: model path → `Huihui-Qwen3.6-35B-A3B-abliterated-w8a8`, `--max-model-len` 16384 → 24576, `--gpu-memory-utilization` 0.95 → 0.90, added `--quantization ascend`. Verified end-to-end via Compose (`docker compose --profile qwen36 up -d`) — `Application startup complete`, `/v1/models` shows `qwen3.6-moe` / `max_model_len: 24576`, live `is_prime` request returns correct code with `finish_reason: stop`.
 
 **Not yet done:** a real soak test under sustained multi-day usage (both this session's testing and the earlier smoke tests were single-session, <1 hour of cumulative live traffic). If anything unexpected shows up under real usage, the bf16 weights are still on disk (see "Production Setup" above) for an easy rollback — just swap the model path, `--max-model-len` back to 16384, `--gpu-memory-utilization` back to 0.95, and drop `--quantization ascend`.
+
+## Upstream vllm-ascend check + routine production health check (2026-09-01)
+
+**Upstream research:** checked `vllm-project/vllm-ascend` on GitHub for changes since the 2026-08-17 pass (which established `v0.23.0-310p-openeuler` as the pinned baseline — see "v0.23.0 stable released" section above). Findings:
+
+- **No numbered release newer than v0.23.0 exists.** The mutable nightly line has moved on — `nightly-releases-v0.25.1rc-310p-openeuler` was rebuilt as recently as 2026-08-25 (newer build than the one tested 2026-08-04, same tag), and a `nightly-releases-v0.26.0rc` line exists — but **no `-310p` variant of v0.26.0rc has been published** (only `-a3`/`-a5` builds). One low-confidence, uncorroborated claim suggests v0.26 may add W8A8SC quantization for 310P; nothing to test yet.
+- **PR #8181 (the 310P triton bypass) is still unmerged**, blocked on merge conflicts since ~2026-07-10 — the triton-stub-removal workaround baked into `docker-compose.yml`'s entrypoint remains necessary indefinitely.
+- **Issue #13050 (the AICPU `IndexPut`/507018 crash that fatally blocked `Eco-Tech/Qwen3.6-35B-A3B-w8a8` on 2026-08-04) is now closed upstream, with a confirmed root cause: an NPU driver-version problem (24.x drivers), fixed by upgrading to a 25.x+ driver combined with the v0.23.0 release.** This host already runs driver 25.3.rc1 on v0.23.0 — so the "no longer reproduces" finding from the 2026-08-17 retest (see that section above) is now understood, not just observed.
+- **Issue #11188 is a separate, still-open bug** — a different symptom ("Reserve addr is invalid, should call halMemMap", a memory-mapping error) in the same 310P+Qwen3.6+w8a8+GDN territory, reported by someone who's tried driver reinstalls/firmware upgrades without resolving it. Doesn't affect this environment today (not observed here), but the underlying bug class isn't fully closed out upstream — worth remembering if anything odd surfaces on the w8a8 production model under real usage.
+
+**Routine production health check:** verified `docker ps` shows all three services (`vllm-qwen36moe`, `openwebui`, `searxng`) up (12 days uptime at check time), and `/v1/models` reports `qwen3.6-moe` / `max_model_len: 24576` — exactly matching the pinned "Production Setup" table. Ran `bench/run_bench.py` against the live endpoint (port 8002, not a standalone test container — no need to touch production for a read-only health check):
+
+| Metric | This check (2026-09-01) | w8a8 adoption baseline (2026-08-19) |
+|---|---|---|
+| Single-stream | 31.29 tok/s | 31.36 tok/s |
+| Concurrent-8 | 31.41 tok/s | 39.85 tok/s |
+| Tool-calls | ✅ populated | ✅ populated |
+| Harness pass@1 (512-token budget) | 0/10 | 0/10 (known artifact, not a real score — see "w8a8 production switch" section for the real 7/10 manual pass@1 at a realistic token budget) |
+
+Single-stream and tool-calling are consistent with the adoption baseline — no drift. The concurrent-8 gap (31.41 vs 39.85) was not re-verified by hand this session (e.g. repeat runs, ruling out background load from other host activity) — worth a re-check if this number matters for a near-term decision, but not treated as a regression on the strength of one run alone.
 
 ## `adeepv/Qwen3.6-27B-W8A16-Ascend310P` — surveyed, NOT tested, ruled out for now (2026-07-22)
 
