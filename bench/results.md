@@ -91,3 +91,10 @@ Run: `python3 bench/run_bench.py --label "<what changed>"`
 - **single-stream: 5.94 tok/s** (min 5.9, max 5.97); concurrent-8: 29.59 tok/s
 - **coding pass@1: 10/10** (1.0)
 - tool-calls: ✅ populated — get_weather({"location": "Paris"})
+
+## 2026-09-01 20:29:27 — Qwen3.8-27B w8a8sc, eager, 24576ctx
+- model: `qwen3.8-w8a8sc`  sampling: `server-default`
+- **single-stream: 7.55 tok/s** (min 7.23, max 7.64); concurrent-8: 23.25 tok/s
+- **coding pass@1: 7/10** (0.7)
+  - failures: two_sum: FAIL, anagram: FAIL, roman: FAIL
+- tool-calls: ✅ populated — get_weather({"location": "Paris"})
