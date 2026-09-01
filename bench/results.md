@@ -85,3 +85,9 @@ Run: `python3 bench/run_bench.py --label "<what changed>"`
 - **coding pass@1: 0/10** (0.0)
   - failures: reverse_string: FAIL, is_prime: FAIL, fizzbuzz: FAIL, two_sum: FAIL, gcd: FAIL, flatten: FAIL, count_vowels: FAIL, merge_sorted: FAIL, anagram: FAIL, roman: FAIL
 - tool-calls: ✅ populated — get_weather({"location": "Paris"})
+
+## 2026-09-01 18:37:13 — Qwen3.8-27B abliterated, standalone test, 32768ctx eager
+- model: `qwen3.8-27b`  sampling: `server-default`
+- **single-stream: 5.94 tok/s** (min 5.9, max 5.97); concurrent-8: 29.59 tok/s
+- **coding pass@1: 10/10** (1.0)
+- tool-calls: ✅ populated — get_weather({"location": "Paris"})
