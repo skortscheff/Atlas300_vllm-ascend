@@ -24,13 +24,15 @@ Two mutually-exclusive vLLM models are available as Compose **profiles** (both n
 
 | Profile | Model | Notes |
 |---|---|---|
-| `qwen36` (**default**) | `Huihui-Qwen3.6-35B-A3B-abliterated-w8a8` — self-quantized w8a8 MoE, served as `qwen3.6-moe` | Uncensored (abliterated), ~31 tok/s, 24576 context, tool-calling works |
+| `qwen36` (**default**) | `Huihui-Qwen3.8-27B-abliterated` — bf16, hybrid linear+full-attention, served as `qwen3.8-27b` | Uncensored (abliterated), ~5.9 tok/s, 16384 context, best coding accuracy of any model tried (10/10 pass@1), tool-calling works |
 | `prod` | `Qwen2.5-Coder-14B-Instruct-abliterated` — dense fp16 | Uncensored (abliterated), ~9.5 tok/s, 32768 context, tool-calling not populated (known issue) |
+
+A faster alternative — self-quantized w8a8 `Qwen3.6-35B-A3B` MoE, ~31 tok/s at 24576 context — is not currently active but its weights remain on disk; see `CLAUDE.md`'s "Production Setup" table for the exact revert command if throughput matters more than accuracy for your use case.
 
 ## Quickstart
 
 ```bash
-# Start production (Qwen3.6 MoE) — also brings up Open WebUI and SearXNG
+# Start production (Qwen3.8-27B) — also brings up Open WebUI and SearXNG
 docker compose --profile qwen36 up -d
 
 # Follow logs — wait for "Application startup complete."
@@ -56,8 +58,9 @@ Open WebUI stays up across a switch; both vLLM services share a network alias so
 
 | Path | Purpose |
 |------|---------|
-| `${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated-w8a8` | Active model, `qwen36` profile (38 GB) |
+| `${MODELS_DIR}/Huihui-Qwen3.8-27B-abliterated` | Active model, `qwen36` profile (52 GB) |
 | `${MODELS_DIR}/Qwen2.5-Coder-14B-Instruct-abliterated` | Active model, `prod` profile (28 GB) |
+| `${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated-w8a8` | Prior `qwen36` model, kept for rollback (38 GB) |
 | `vllm-atlas_vllm-cache` (Docker volume) | vLLM compilation cache |
 | `openwebui-data/` | Open WebUI database (bind mount) |
 | `searxng/settings.yml` | SearXNG config (bind mount) |
@@ -126,7 +129,7 @@ curl http://<HOST_IP>:8002/v1/models
 curl http://<HOST_IP>:8002/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "qwen3.6-moe",
+    "model": "qwen3.8-27b",
     "messages": [{"role": "user", "content": "hello"}],
     "max_tokens": 20
   }'
@@ -143,7 +146,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="qwen3.6-moe",
+    model="qwen3.8-27b",
     messages=[{"role": "user", "content": "Write a hello world in Python"}],
 )
 print(response.choices[0].message.content)
@@ -153,27 +156,29 @@ print(response.choices[0].message.content)
 
 | Parameter | Value | Reason |
 |-----------|-------|--------|
-| `--dtype` | `float16` | Required for Ascend 310P compatibility |
-| `--quantization` | `ascend` | w8a8 checkpoint, ascend-native (msmodelslim) format |
+| `--dtype` | `float16` | Required for Ascend 310P compatibility (bf16 checkpoint cast on load) |
+| `--enforce-eager` | — | Mandatory for this model's architecture — ACLGraph (non-eager) mode crashes with an `AclmdlRICaptureEnd` error on 310P |
 | `--tensor-parallel-size` | `2` | Splits model across both chips |
-| `--max-model-len` | `24576` | Max context window (input + output); 310P's attention-mask-compression limit caps this below 32768 |
-| `--gpu-memory-utilization` | `0.90` | Fraction of NPU memory used for weights + KV cache |
-| `--max-num-seqs` | `16` | Max concurrent sequences |
+| `--max-model-len` | `16384` | Deliberately capped below the 32768 proven feasible, to leave memory headroom |
+| `--gpu-memory-utilization` | `0.90` | Fraction of NPU memory used for weights + KV cache; tuning higher showed no measurable benefit |
+| `--max-num-seqs` | `16` | Max concurrent sequences; tuning higher showed no measurable benefit |
+| `--enable-prefix-caching` / `--enable-chunked-prefill` | — | Compatible with this architecture in eager mode; no cost, may help real multi-turn usage |
 | `--reasoning-parser` | `qwen3` | Splits `<think>` chain-of-thought into a separate `reasoning` field |
 | `--enable-auto-tool-choice` / `--tool-call-parser qwen3_coder` | — | Enables structured tool-calling |
-| `--override-generation-config` | `{"temperature": 0.2, "repetition_penalty": 1.1}` | Fixes a reasoning-non-termination bug in this model family (see `CLAUDE.md`) |
+| `--override-generation-config` | `{"temperature": 0.2, "repetition_penalty": 1.1}` | This model's own defaults are loose (`temperature: 1.0`, no repetition penalty) and produced a real accuracy failure in testing; this fix reached a clean 10/10 pass@1 (see `CLAUDE.md`) |
 
 vLLM's own triton JIT compiler doesn't support the 310P at all — the container's entrypoint works around this by renaming the bundled (broken) `triton` package before `vllm serve` starts, so `torch` falls back to the vendor's own Ascend compiler cleanly. See `CLAUDE.md` for the full story.
 
 ## Performance Baseline
 
-Measured 2026-08-19 against the live `qwen36` profile API, full comparison vs. the prior bf16 checkpoint in `CLAUDE.md`:
+Measured 2026-09-01 against the live `qwen36` profile API, full tuning comparison in `CLAUDE.md`'s "Qwen3.8-27B bf16 adopted as production" section:
 
 | Metric | Value |
 |--------|-------|
-| Single-stream throughput | 31.36 tok/s |
-| Concurrent-8 throughput | 39.85 tok/s |
-| Context window | 24576 tokens |
+| Single-stream throughput | 5.82 tok/s |
+| Concurrent-8 throughput | 31.63 tok/s |
+| Context window | 16384 tokens |
+| Coding pass@1 | 10/10 |
 | Tool-calling | Populated correctly |
 
 ## Open WebUI
@@ -197,7 +202,7 @@ conn.close()
 ## Useful Commands
 
 ```bash
-# Start production (Qwen3.6 MoE)
+# Start production (Qwen3.8-27B)
 docker compose --profile qwen36 up -d
 
 # Start the dense Qwen2.5-Coder-14B alternative instead

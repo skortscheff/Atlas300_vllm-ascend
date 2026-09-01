@@ -78,17 +78,16 @@ services:
       - /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info:ro
       - /etc/ascend_install.info:/etc/ascend_install.info:ro
       - vllm-cache:/root/.cache/vllm
-      - ${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated-w8a8:/models/Huihui-Qwen3.6-35B-A3B-abliterated-w8a8:ro
+      - ${MODELS_DIR}/Huihui-Qwen3.8-27B-abliterated:/models/Huihui-Qwen3.8-27B-abliterated:ro
     command:
       - >-
         mv /usr/local/python3.12.13/lib/python3.12/site-packages/triton
         /usr/local/python3.12.13/lib/python3.12/site-packages/triton.disabled &&
-        exec vllm serve /models/Huihui-Qwen3.6-35B-A3B-abliterated-w8a8
-        --served-model-name qwen3.6-moe --trust-remote-code --tensor-parallel-size 2
-        --dtype float16 --quantization ascend --max-model-len 24576 --max-num-seqs 16
+        exec vllm serve /models/Huihui-Qwen3.8-27B-abliterated
+        --served-model-name qwen3.8-27b --trust-remote-code --tensor-parallel-size 2
+        --dtype float16 --enforce-eager --max-model-len 16384 --max-num-seqs 16
         --gpu-memory-utilization 0.90
-        --additional-config '{"ascend_compilation_config": {"fuse_norm_quant": false}}'
-        --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY", "cudagraph_capture_sizes": [1,4]}'
+        --enable-prefix-caching --enable-chunked-prefill --max-num-batched-tokens 16384
         --mamba-ssm-cache-dtype float16 --reasoning-parser qwen3
         --enable-auto-tool-choice --tool-call-parser qwen3_coder
         --override-generation-config '{"temperature": 0.2, "repetition_penalty": 1.1}'

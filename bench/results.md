@@ -98,3 +98,30 @@ Run: `python3 bench/run_bench.py --label "<what changed>"`
 - **coding pass@1: 7/10** (0.7)
   - failures: two_sum: FAIL, anagram: FAIL, roman: FAIL
 - tool-calls: ✅ populated — get_weather({"location": "Paris"})
+
+## 2026-09-01 21:07:33 — Qwen3.8-27B bf16 tuning: baseline (16384ctx, util0.90, seqs16, eager)
+- model: `qwen3.8-27b`  sampling: `server-default`
+- **single-stream: 5.93 tok/s** (min 5.84, max 5.96); concurrent-8: 30.22 tok/s
+- **coding pass@1: 9/10** (0.9)
+  - failures: roman: FAIL
+- tool-calls: ✅ populated — get_weather({"location": "Paris"})
+
+## 2026-09-01 21:28:12 — Qwen3.8-27B bf16 tuning: util0.97 seqs32 (16384ctx, eager)
+- model: `qwen3.8-27b`  sampling: `server-default`
+- **single-stream: 5.92 tok/s** (min 5.84, max 5.95); concurrent-8: 30.17 tok/s
+- **coding pass@1: 9/10** (0.9)
+  - failures: roman: FAIL
+- tool-calls: ✅ populated — get_weather({"location": "Paris"})
+
+## 2026-09-01 21:50:09 — Qwen3.8-27B bf16 tuning: prefix-caching+chunked-prefill (16384ctx, eager)
+- model: `qwen3.8-27b`  sampling: `server-default`
+- **single-stream: 5.89 tok/s** (min 5.78, max 5.93); concurrent-8: 30.01 tok/s
+- **coding pass@1: 9/10** (0.9)
+  - failures: roman: FAIL
+- tool-calls: ✅ populated — get_weather({"location": "Paris"})
+
+## 2026-09-01 22:11:38 — Qwen3.8-27B bf16 tuning: sampling temp0.2/rep1.1 + prefix-caching+chunked-prefill (16384ctx, eager)
+- model: `qwen3.8-27b`  sampling: `server-default`
+- **single-stream: 5.82 tok/s** (min 5.75, max 5.86); concurrent-8: 31.63 tok/s
+- **coding pass@1: 10/10** (1.0)
+- tool-calls: ✅ populated — get_weather({"location": "Paris"})
