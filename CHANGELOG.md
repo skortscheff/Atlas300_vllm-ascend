@@ -4,6 +4,30 @@ All notable changes to this project are documented here.
 
 ---
 
+## [v1.17] — 2026-09-02
+
+### Changed
+- **Production model switched to `Huihui-Qwen3.8-27B-abliterated`** (bf16, hybrid linear+full-attention),
+  served as `qwen3.8-27b` on the `qwen36` profile — a deliberate accuracy-over-throughput trade
+  against the prior w8a8 Qwen3.6 MoE pin: single-stream drops from ~31 tok/s to ~5.9 tok/s and
+  context drops from 24576 to 16384, but coding pass@1 goes from a probabilistic 6-7/10 to a clean,
+  repeatable 10/10. Requires `--enforce-eager` (ACLGraph crashes on this architecture) and the same
+  `--override-generation-config` sampling-stability fix used for the previous model.
+- **`CLAUDE.md` rewritten as a concise operational reference**, dropping several months of
+  session-by-session investigation narrative (every experiment, dead end, and benchmark run). The
+  full history remains available in git log; `CLAUDE.md` now documents only the current pinned
+  state, why its non-obvious flags exist, and open items.
+- **`guia-api.md` updated** to describe the new active model (`qwen3.8-27b`: 16384 context,
+  ~5.9 tok/s, same sampling-stability defaults) instead of the superseded w8a8 Qwen3.6 model.
+
+### Removed
+- **Major disk cleanup**: ~385GB freed (736G → 351G used on `/`). Docker images went from 120
+  (335.9GB) to 42 (94.55GB) — removed ~30 dead/superseded vllm-ascend and CANN test-image builds,
+  an abandoned Huawei-internal POC image, gpt-oss experiment images, and a MindIE remnant image.
+  Model weights: removed the declined `adeepv-Qwen3.8-27B-w8a8sc-310P` checkpoint (accuracy
+  regression, not adopted) and the bf16 `Huihui-Qwen3.6-35B-A3B-abliterated` source (superseded —
+  its self-quantized w8a8 derivative is already on disk and working).
+
 ## [v1.16] — 2026-09-01
 
 Summary entry bridging several months of untracked changes — see `CLAUDE.md` for the full

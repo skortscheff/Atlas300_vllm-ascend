@@ -6,7 +6,7 @@ Getting these cards to run and actually *do* something has been proven really di
 
 PLease don't mind the AI generated slop of documentation here :P it actually works.
 
-> Full engineering log — every experiment, dead end, and benchmark run — lives in [`CLAUDE.md`](./CLAUDE.md). This README is just the "how do I run this" summary.
+> Operational reference (pinned config, platform gotchas, current model inventory) lives in [`CLAUDE.md`](./CLAUDE.md). This README is just the "how do I run this" summary.
 
 ## Stack
 
@@ -27,7 +27,7 @@ Two mutually-exclusive vLLM models are available as Compose **profiles** (both n
 | `qwen36` (**default**) | `Huihui-Qwen3.8-27B-abliterated` — bf16, hybrid linear+full-attention, served as `qwen3.8-27b` | Uncensored (abliterated), ~5.9 tok/s, 16384 context, best coding accuracy of any model tried (10/10 pass@1), tool-calling works |
 | `prod` | `Qwen2.5-Coder-14B-Instruct-abliterated` — dense fp16 | Uncensored (abliterated), ~9.5 tok/s, 32768 context, tool-calling not populated (known issue) |
 
-A faster alternative — self-quantized w8a8 `Qwen3.6-35B-A3B` MoE, ~31 tok/s at 24576 context — is not currently active but its weights remain on disk; see `CLAUDE.md`'s "Production Setup" table for the exact revert command if throughput matters more than accuracy for your use case.
+A faster alternative — self-quantized w8a8 `Qwen3.6-35B-A3B` MoE, ~31 tok/s at 24576 context — is not currently wired into a profile but its weights remain on disk; see `CLAUDE.md`'s "Models on disk" table if throughput matters more than accuracy for your use case (switching to it means editing the `qwen36` service's model path/flags in `docker-compose.yml`).
 
 ## Quickstart
 

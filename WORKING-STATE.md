@@ -1,9 +1,10 @@
-# Working State Snapshot — 2026-09-01
+# Working State Snapshot — 2026-09-02
 
-This document captures the exact production configuration as of 2026-09-01.
-Use it to restore the environment to a known-good state. Full narrative and
-every experiment that led here is in `CLAUDE.md` — this is just the fast
-"how do I get back to known-good" reference.
+This document captures the exact production configuration as of 2026-09-02.
+Use it to restore the environment to a known-good state. `CLAUDE.md` is the
+fuller operational reference (why the non-obvious flags exist, model
+inventory, open items) — this is just the fast "how do I get back to
+known-good" summary.
 
 ---
 
@@ -126,8 +127,9 @@ not support bf16 at the hardware op level. Mounted into the container as
 does not affect model loading. The prior production model, the self-quantized w8a8
 `Huihui-Qwen3.6-35B-A3B-abliterated-w8a8` (38GB, ~31 tok/s single-stream), is still on disk at
 `${MODELS_DIR}/Huihui-Qwen3.6-35B-A3B-abliterated-w8a8` as a rollback path if throughput matters
-more than accuracy for a given use case — see `CLAUDE.md`'s "Production Setup" table for the
-exact revert command.
+more than accuracy for a given use case (see `CLAUDE.md`'s "Models on disk" table). A 2026-09-02
+disk cleanup removed several declined/superseded checkpoints and ~240GB of dead Docker images —
+see `CLAUDE.md`'s "Housekeeping" section for what's left to do (one pending `sudo rm`).
 
 ---
 
@@ -145,8 +147,8 @@ exact revert command.
 
 ## Performance Baseline
 
-Measured 2026-09-01 via the OpenAI-compatible API (`/v1/chat/completions`), full tuning
-comparison in `CLAUDE.md`'s "Qwen3.8-27B bf16 adopted as production" section:
+Measured 2026-09-01 via the OpenAI-compatible API (`/v1/chat/completions`) — see `CLAUDE.md`'s
+"Performance Baseline" section:
 
 | Metric | Value |
 |--------|-------|
@@ -165,9 +167,9 @@ tuning-pass narrative (what knobs were tried, what mattered and what didn't).
 
 ## What NOT to Do
 
-- **Do not** `docker pull` and blindly retag `v0.23.0-310p-openeuler` — verify against `CLAUDE.md`'s
-  Known Issues table first; several `-310p-openeuler` tags have shipped broken (triton-shadowing,
-  bishengir/Ascend310P3 gaps).
+- **Do not** `docker pull` and blindly retag `v0.23.0-310p-openeuler` — several `-310p-openeuler`
+  tags have shipped broken in the past (triton-shadowing, bishengir/Ascend310P3 gaps). Test any new
+  tag standalone on a different port first (see CLAUDE.md's "Production Setup" section).
 - **Note:** `--max-model-len 16384` is a deliberate choice for headroom, not a hard ceiling for this
   model — 32768 was already proven feasible in testing (this model uses `--enforce-eager`, so it
   doesn't hit the ACLGraph compile-workspace OOM that caps other models on this hardware). Raise it
@@ -182,7 +184,8 @@ tuning-pass narrative (what knobs were tried, what mattered and what didn't).
 
 ## When a New vLLM Image Becomes Available
 
-Check `CLAUDE.md`'s "Known Issues / Image History" table and the latest "Upstream vllm-ascend
-check" section before upgrading — 310P support has regressed on several past tags. Always test a
-new tag standalone on a different port (e.g. 8003), never by editing `docker-compose.yml` in
-place, and restore production exactly before considering the task done.
+310P support has regressed on several past tags (triton-shadowing bugs, missing bishengir compile
+targets) — never assume a newer tag is safe. Always test a new tag standalone on a different port
+(e.g. 8003), never by editing `docker-compose.yml` in place, and restore production exactly before
+considering the task done. See `CLAUDE.md`'s "Production Setup" section for the required
+triton-stub-removal workaround and other platform facts that any new image still needs.
